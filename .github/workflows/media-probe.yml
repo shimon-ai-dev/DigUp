@@ -62,8 +62,8 @@ jobs:
           swift package resolve
           git diff --exit-code -- Package.resolved
           test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
-          swift build --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-media-cli-build.log"
-          printf 'DIGUP_CLI=%s/digup\n' "$(swift build --show-bin-path)" >> "$GITHUB_ENV"
+          swift build -c release --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-media-cli-build.log"
+          printf 'DIGUP_CLI=%s/digup\n' "$(swift build -c release --show-bin-path)" >> "$GITHUB_ENV"
 
       - name: Download and checksum the exact pinned public model files
         timeout-minutes: 12
@@ -117,7 +117,7 @@ jobs:
             --renderer "$RUNNER_TEMP/digup-media-renderer" 2>&1 | tee "$RUNNER_TEMP/digup-media-fixtures.log"
           # Source transcripts and voice inventory are outside inputs, never indexed.
           test -f "$PROBE_OUTPUT/inputs/a/f001.wav"
-          test -f "$PROBE_OUTPUT/inputs/a/f021.wav"
+          test -f "$PROBE_OUTPUT/inputs/h/f021.wav"
 
       - name: Run real indexing, bilingual retrieval and localization diagnostics
         id: diagnostic
@@ -161,7 +161,8 @@ jobs:
             ${{ env.PROBE_OUTPUT }}/summary.txt
             ${{ env.PROBE_OUTPUT }}/available-voices.txt
             ${{ env.PROBE_OUTPUT }}/inputs/
-            ${{ env.PROBE_OUTPUT }}/indices/main/*.log
+            ${{ env.PROBE_OUTPUT }}/indices/
+            ${{ env.PROBE_OUTPUT }}/snapshots/
             ${{ env.PROBE_OUTPUT }}/logs/
             ${{ runner.temp }}/digup-media-*.log
           if-no-files-found: ignore

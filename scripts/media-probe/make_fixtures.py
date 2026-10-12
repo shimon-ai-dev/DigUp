@@ -79,7 +79,7 @@ def make(output, renderer):
         raise RuntimeError('Fixture generation requires macOS; no substitute media will be used')
     output.mkdir(parents=True, exist_ok=False)
     root = output / 'inputs'
-    for folder in ('a', 'b', 'c', 'd', 'e'):
+    for folder in ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'):
         (root / folder).mkdir(parents=True)
     scratch = output / 'generation-scratch'; scratch.mkdir()
     manifest = {'schema_version': 1, 'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -114,35 +114,36 @@ def make(output, renderer):
         say_wav('Samantha', en, path, scratch)
         fixture(path, 'Locally generated macOS Samantha TTS', en, ['audio'])
         pair(topic, query_en, query_zh, [str(path.relative_to(root))], 'audio', 'core_audio', segment='audio')
-    for index, text in enumerate(DISTRACTORS, 5):
-        path = root / 'a' / f'f{index:03d}.wav'
-        say_wav('Samantha', text, path, scratch)
-        fixture(path, 'Locally generated macOS Samantha TTS distractor', text, ['audio'])
-    manifest['coverage']['english_speech'] = 'GENERATED: Samantha, 4 topics + 16 distractors'
+    for index, text in enumerate(DISTRACTORS, 105):
+        path = root / 'd' / f'f{index:03d}.txt'
+        path.write_text(text + '\n')
+        fixture(path, 'Locally generated short fictional text distractor', text, ['chunk'])
+    manifest['coverage']['english_speech'] = 'GENERATED: Samantha, 4 required topics; isolated before extra media'
+    manifest['coverage']['interference'] = 'GENERATED: 16 short text distractors; no 16-clip audio upfront cost'
     # Exact 90 seconds. Target is completely absent in the first 65 seconds.
-    prefix = read_wav(root / 'a' / 'f005.wav')
+    prefix = say_wav('Samantha', DISTRACTORS[0], scratch / 'prefix.wav', scratch)
     target_path = scratch / 'late.wav'
     late = say_wav('Samantha', LATE, target_path, scratch)
     prefix_samples = 65 * 16000 * 2
     target_samples = 25 * 16000 * 2
     prefix = (prefix * (prefix_samples // len(prefix) + 1))[:prefix_samples]
     late = (late * (target_samples // len(late) + 1))[:target_samples]
-    path = root / 'a' / 'f021.wav'; write_wav(path, prefix + late)
+    path = root / 'h' / 'f021.wav'; write_wav(path, prefix + late)
     fixture(path, 'Locally generated Samantha TTS concatenation, 90s',
             {'0-65s': DISTRACTORS[0], '65-90s': LATE}, ['audio'], target_interval=[65, 90])
     pair('late-frosting', 'vanilla cream frosting and fresh strawberries', '香草奶油糖霜和新鲜草莓',
-         ['a/f021.wav'], 'audio', 'core_audio', segment='audio', minimum_loc=50, target_start=65)
+         ['h/f021.wav'], 'audio', 'late_audio', segment='audio', minimum_loc=50, target_start=65)
     chinese = [name for name, locale in installed if locale == 'zh_CN']
     manifest['coverage']['chinese_spoken_content'] = 'UNTESTED: no usable installed zh_CN voice'
     for voice in chinese[:1]:
         try:
-            for index, (topic, en, zh, query_en, query_zh) in enumerate(TOPICS, 25):
-                path = root / 'a' / f'f{index:03d}.wav'
+            for index, (topic, en, zh, query_en, query_zh) in enumerate(TOPICS[:1], 25):
+                path = root / 'g' / f'f{index:03d}.wav'
                 say_wav(voice, zh, path, scratch)
                 fixture(path, f'Locally generated installed macOS voice {voice}', zh, ['audio'])
                 pair('chinese-speech-' + topic, query_en, query_zh, [str(path.relative_to(root))],
                      'audio', 'other_audio', segment='audio')
-            manifest['coverage']['chinese_spoken_content'] = f'GENERATED: installed {voice}; no voice installation attempted'
+            manifest['coverage']['chinese_spoken_content'] = f'GENERATED: one shopping clip, installed {voice}; no voice installation attempted'
         except Exception as error:
             manifest['generation_errors'].append(f'Chinese voice {voice}: {error}')
             # Successfully generated cases remain available; ungenerated cases are never marked pass.
@@ -150,18 +151,18 @@ def make(output, renderer):
     rng = random.Random(20261012)
     values = array('h', (int(rng.uniform(-1, 1) * 2600 * (0.8 + 0.2*math.sin(i/16000))) for i in range(8*16000)))
     if sys.byteorder != 'little': values.byteswap()
-    path = root / 'a' / 'f023.wav'; write_wav(path, values.tobytes())
+    path = root / 'f' / 'f023.wav'; write_wav(path, values.tobytes())
     fixture(path, 'Locally generated deterministic noise, synthetic rain-like approximation', None, ['audio'])
     manifest['coverage']['environment_sound'] = 'SYNTHETIC ONLY: generated noise and optional macOS Glass alert'
-    pair('synthetic-noise', 'steady rain noise', '持续的雨声', ['a/f023.wav'], 'audio', 'other_audio', segment='audio')
+    pair('synthetic-noise', 'steady rain noise', '持续的雨声', ['f/f023.wav'], 'audio', 'other_audio', segment='audio')
     system_sound = Path('/System/Library/Sounds/Glass.aiff')
     if system_sound.exists():
         converted = scratch / 'glass.wav'
         command(['afconvert', '-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', str(system_sound), str(converted)])
         sound = read_wav(converted)
-        path = root / 'a' / 'f024.wav'; write_wav(path, (sound + b'\0' * 16000) * 3)
+        path = root / 'f' / 'f024.wav'; write_wav(path, (sound + b'\0' * 16000) * 3)
         fixture(path, str(system_sound) + ' repeated with half-second gaps', None, ['audio'])
-        pair('system-chime', 'glass bell chime', '玻璃铃铛提示音', ['a/f024.wav'], 'audio', 'other_audio', segment='audio')
+        pair('system-chime', 'glass bell chime', '玻璃铃铛提示音', ['f/f024.wav'], 'audio', 'other_audio', segment='audio')
     # Readable bilingual screenshots, no transcripts stored alongside the indexed inputs.
     try:
         command([str(renderer), 'screenshots', str(root / 'c')], timeout=90)

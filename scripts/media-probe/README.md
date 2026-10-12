@@ -8,23 +8,23 @@ Use a fresh output directory under **`$HOME/Library/Caches`, outside a repositor
 
 ```sh
 scripts/build-llama.sh
-swift build --jobs 2 --product digup
+swift build -c release --jobs 2 --product digup
 swiftc -parse-as-library scripts/media-probe/render_fixtures.swift -o /tmp/digup-media-renderer
 python3 scripts/media-probe/test_probe.py
 python3 scripts/media-probe/make_fixtures.py \
   --output "$HOME/Library/Caches/DigUpTest-media-probe" --renderer /tmp/digup-media-renderer
 unset DIGUP_WORKER_DIR
 python3 scripts/media-probe/run_probe.py \
-  --cli "$(swift build --show-bin-path)/digup" --output "$HOME/Library/Caches/DigUpTest-media-probe"
+  --cli "$(swift build -c release --show-bin-path)/digup" --output "$HOME/Library/Caches/DigUpTest-media-probe"
 ```
 
-The separate `.github/workflows/media-probe.yml` runs only on `ci/chinese-media-probe` or a manual dispatch. It is restricted to the authorized public fork `xieshiqi147258/DigUp`, uses standard `macos-26`, and has a 45-minute job limit. Existing app packaging is not triggered by that branch. No model files, private user files, or indexes are uploaded; generated public fixtures and diagnostic reports/logs are the only artifacts.
+The separate `.github/workflows/media-probe.yml` runs only on `ci/chinese-media-probe` or a manual dispatch. It is restricted to the authorized public fork `xieshiqi147258/DigUp`, uses standard `macos-26`, and has a 45-minute job limit. Existing app packaging is not triggered by that branch. No model files or private user files are uploaded. Artifacts contain generated public fixtures, reports/logs, and fixture-only SQLite databases/snapshots so partial progress remains diagnosable.
 
 ## Fixtures and honest coverage
 
-- Required intelligible English Samantha TTS: shopping for milk/eggs, storm flight delay, 20% quarterly revenue growth, and chocolate cake. Sixteen different spoken distractors supply interference.
-- A 90-second recording contains only gardening speech during seconds 0–65, then vanilla frosting/strawberry speech during seconds 65–90. Localization requires an audio segment starting at 50 seconds or later and extending past 65 seconds; the 30-second/25-second-hop window can legitimately start before the target.
-- `say -v '?'` inventories installed voices. Chinese speech is attempted only when a `zh_CN` voice is listed; no voice is installed. Unavailable/failed Chinese synthesis is labeled UNTESTED. English and Chinese queries still search the same English audio.
+- Required intelligible English Samantha TTS: shopping for milk/eggs, storm flight delay, 20% quarterly revenue growth, and chocolate cake. Only these four clips enter the first required audio phase. Sixteen short text distractors supply the next interference comparison without an upfront 16-clip audio cost.
+- A separately bounded, last-phase 90-second recording contains only gardening speech during seconds 0–65, then vanilla frosting/strawberry speech during seconds 65–90. Localization requires an audio segment starting at 50 seconds or later and extending past 65 seconds; the 30-second/25-second-hop window can legitimately start before the target.
+- `say -v '?'` inventories installed voices. One shopping clip in Chinese is attempted only when a `zh_CN` voice is listed; no voice is installed. Unavailable/failed Chinese synthesis is labeled UNTESTED. English and Chinese queries still search the same English audio.
 - Locally rendered English airport and Chinese revenue screenshots contain readable text, unlike the synthetic rectangles in the existing reference-vector fixture. The actual index's Apple Vision OCR text is recorded.
 - Short English shopping and Chinese cake text files exercise both semantic and lexical content search.
 - If available, `/Library/User Pictures/Animals` supplies documented macOS-bundled ordinary photographs. Neutral destination names prevent the source filename from answering the query. Missing pictures are UNTESTED.
@@ -35,7 +35,7 @@ All filenames and indexed directory names are neutral IDs. Source transcripts, t
 
 ## Observations and stopping condition
 
-`run_probe.py` uses the actual CLI `index`, `worker --text-only`, and `search`, not injected reference vectors. Audio indexing and its paired query results are saved first, before adding other modalities. Each command has a timeout; every completed phase and query is checkpointed atomically to `results.json`. Failure does not erase completed audio observations.
+`run_probe.py` uses the actual CLI `index`, `worker --text-only`, and `search`, not injected reference vectors. A single-file core pilot is capped at 180 seconds; its English/Chinese query pair is recorded immediately. Then the remaining three core clips are capped at 300 seconds before all eight core queries. Short-text interference follows; Chinese speech, photos, screenshots, video, sounds, and finally the long recording are optional separate phases. Each optional phase starts from an exact SQLite backup of the completed core+text baseline, so a pending input from a timed-out phase cannot get retried in an unrelated phase. No all-media merged ranking is claimed. Each query and phase audit identifies its actual index directory. Each command has a timeout inside a 22-minute harness budget (25-minute CI step). Every completed phase/query and 15-second read-only SQLite state observation is checkpointed atomically to `results.json`. Failure does not erase completed core observations. Only the probe’s own process group is terminated on timeout; SQLite backup snapshots and live DB/WAL files are retained. A failed first index pilot triggers one separately capped 180-second direct unchanged native worker audio operation on the same cake WAV, to distinguish indexing/extraction from native inference blockers.
 
 The report separates:
 
@@ -49,9 +49,13 @@ The report separates:
 
 Raw cosine rank is **not** assumed to equal wide fused rank: production search centers modalities, clamps negative z contributions, applies kind hints, and collapses each file to one chosen segment. CLI results are authoritative. Only short document fixtures are used, so there are no later long-document vectors excluded from the normalization scale.
 
-The run ends when all available fixture cases and small-sample comparisons have been recorded, or on an infrastructure blocker/timeout. Missing required English topics, invalid/missing vectors for generated fixtures, worker failure, and disagreement between diagnostic math and the CLI fail the infrastructure run. Semantic retrieval/localization failures remain explicit `FAIL` rows in an otherwise `COMPLETED` diagnostic, never disguised as passing quality tests. Optional unavailable sources remain `UNTESTED`.
+The run ends when all available fixture cases and small-sample comparisons have been recorded, or on an infrastructure blocker/timeout. Missing required English topics, invalid/missing core vectors, core worker failure, and core diagnostic/CLI disagreement fail the infrastructure run. Optional phase failures/timeouts yield explicit PARTIAL observations and UNTESTED queries while preserving core results. Semantic retrieval/localization failures remain explicit `FAIL` rows in an otherwise `COMPLETED` diagnostic, never disguised as passing quality tests. Optional unavailable sources remain `UNTESTED`.
 
 The known behavior where audio/video indexing can mark a file done after an individual embedding returned no vector is **not fixed**. The segment audit detects nil/invalid vectors even when the file state says done. The indexer may discard the original per-embedding error; report the missing vector rather than inventing its cause.
+
+## First runner evidence and bounded recovery
+
+The first native run built the CLI and renderer, verified both pinned models, and generated every fixture (including the installed Eddy Chinese voice). Full-model startup reached ready in 37.19 seconds. Its worker log reported unsupported MTL0 operators and CPU fallbacks; indexing then exceeded 720 seconds without captured stdout or any query results. Because ordinary CLI stdout was buffered and that artifact omitted SQLite, the evidence cannot distinguish cumulative inference cost from a stuck input. The original newest-first queue also put required English clips behind later-created media. The staged probe and progress/snapshot changes address these diagnostic blind spots; they do not claim to repair native audio inference or change the backend.
 
 ## Local verification limits
 
