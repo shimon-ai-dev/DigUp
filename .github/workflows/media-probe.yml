@@ -25,7 +25,6 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
       LLAMA_REVISION: 4d756bc72bf00a4aacf410ae15a2d315f3db400d
       SPARKLE_REVISION: eef1a539a373c1f1a320624b1130fc5de7b2e100
-      DIGUP_MODELS: ${{ runner.temp }}/digup-media-models
 
     steps:
       - name: Checkout source
@@ -46,10 +45,11 @@ jobs:
           command -v say > /dev/null
           command -v afconvert > /dev/null
           python3 scripts/media-probe/test_probe.py
+          printf 'DIGUP_MODELS=%s/digup-media-models\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
           printf 'PROBE_OUTPUT=%s/Library/Caches/DigUpTest-media-probe-%s-%s\n' \
             "$HOME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
-      - name: Build the unchanged CLI and local fixture renderer
+      - name: Build the unchanged CLI
         timeout-minutes: 15
         run: |
           set -euo pipefail
@@ -63,8 +63,6 @@ jobs:
           git diff --exit-code -- Package.resolved
           test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
           swift build --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-media-cli-build.log"
-          swiftc -parse-as-library scripts/media-probe/render_fixtures.swift -o "$RUNNER_TEMP/digup-media-renderer" \
-            2>&1 | tee "$RUNNER_TEMP/digup-media-renderer-build.log"
           printf 'DIGUP_CLI=%s/digup\n' "$(swift build --show-bin-path)" >> "$GITHUB_ENV"
 
       - name: Download and checksum the exact pinned public model files
@@ -101,6 +99,15 @@ jobs:
               partial.replace(destination)
               print(f'Verified {name}: {size} bytes, SHA-256 {digest}', flush=True)
           PY
+
+      - name: Compile optional native visual fixture renderer
+        id: renderer
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library scripts/media-probe/render_fixtures.swift -o "$RUNNER_TEMP/digup-media-renderer" \
+            2>&1 | tee "$RUNNER_TEMP/digup-media-renderer-build.log"
 
       - name: Generate intelligible public fixtures with neutral filenames
         timeout-minutes: 8
