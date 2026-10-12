@@ -62,7 +62,7 @@ import Testing
         let data = output.fileHandleForReading.readDataToEndOfFile()
         let stderr = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        #expect(process.terminationStatus == 0, String(data: stderr, encoding: .utf8) ?? "CLI failed")
+        #expect(process.terminationStatus == 0, "CLI stderr: \(String(data: stderr, encoding: .utf8) ?? "none")")
         let rows = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
         #expect(rows.first?["path"] as? String == "/public-synthetic/f004.wav")
         #expect(rows.first?["is_suggestion"] as? Bool == true)

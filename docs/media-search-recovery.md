@@ -32,6 +32,16 @@ orchestras and bicycle tires), prints their actual cosines against all four reco
 audio-only searches. A mixed text/image/audio replay exercises cross-modality normalization. Synthetic tests cover
 invalid vectors, low signal, near-equal scores, suggestion limits, explicit diagnostic gates and existing result order.
 
+`public-multimodal-vectors.json` also preserves the exact single-query vectors, 22 real text distractors and media
+segments from [run 38257779846](https://github.com/xieshiqi147258/DigUp/actions/runs/38257779846), artifact
+`digup-media-probe-38257779846-1`, using the same pinned model revision and hashes above. Its replay checks the prior
+10 strong English/Chinese photo, Chinese screenshot, video frame/sound and late-audio answers and locations unchanged,
+in explicit-kind and All searches. The late-audio match remains 75–90 seconds. The Chinese spoken-content query's
+cosine 0.652768 is exposed only as a low-confidence suggestion; its English counterpart at 0.593672 remains below the
+floor. Those two queries still have only one audio candidate, so this is compatibility/labeling evidence, not proof
+of Chinese speech discrimination. Stored segments retain exact float16 bytes; queries retain exact single-query
+float32 bytes, avoiding the measured batch-versus-single encoding variance.
+
 ## Indexing failures and retry
 
 Audio/video responses are checked per input for errors, missing vectors, invalid vectors and response-count mismatch.
