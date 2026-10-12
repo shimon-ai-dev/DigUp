@@ -117,7 +117,8 @@ public final class Searcher {
 
     public func search(_ text: String, queryVector: [Float]?, kinds: Set<FileKind>? = nil, limit: Int = 20,
                        zGate: Double = 2.0, wordWeight: Double? = nil, prefixLast: Bool = false) throws -> [SearchHit] {
-        guard limit > 0, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        guard limit > 0 else { return [] }
+        let hasQueryText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let wordWeight = wordWeight ?? (isCode ? Self.codeWordWeight : Self.wordWeight)
         if queryVector != nil, !vectorsLoaded { try reload() }
         let fileKind = self.fileKind
@@ -228,7 +229,7 @@ public final class Searcher {
         // A within-modality contrast prevents a near-equal cluster of unrelated media becoming suggestions.
         var suggestions: [Int64] = []
         var recovered: [Int64: (z: Double, cosine: Double, row: Int)] = [:]
-        if !isCode, zGate == 2.0 {
+        if !isCode, hasQueryText, zGate == 2.0 {
             var totals: [Modality: (sum: Double, count: Int)] = [:]
             for matches in mediaBest.values {
                 for (modality, match) in matches {

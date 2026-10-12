@@ -88,7 +88,9 @@ import Testing
         let hits = try searcher.search("groceries for breakfast", queryVector: query)
         #expect(hits.count == 3)
         #expect(Searcher.strongCount(hits) == 0)
+        // Keep the existing vector-only strong-search API, but never recover suggestions from an empty query.
         #expect(try searcher.search("", queryVector: query).isEmpty)
+        #expect(try searcher.search("  \n", queryVector: query).isEmpty)
         #expect(try searcher.search("groceries for breakfast", queryVector: query, zGate: 1_000_000).isEmpty)
         #expect(try searcher.search("groceries for breakfast", queryVector: query, limit: 1).count == 1)
     }
