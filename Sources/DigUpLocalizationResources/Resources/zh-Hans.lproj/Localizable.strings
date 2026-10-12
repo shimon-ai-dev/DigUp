@@ -58,7 +58,7 @@
 "error.index.start" = "无法开始索引";
 "error.index.stopped" = "索引已停止";
 "error.login" = "无法更改登录启动设置：%@";
-"error.originalData" = "DigUp Test 不能使用原版 DigUp 的数据目录";
+"error.originalData" = "DigUp Test 不能使用原版 DigUp 的数据目录；请选择独立的测试数据目录";
 "error.shortcut.emoji" = "表情符号选择器正在使用 %@";
 "error.shortcut.finder" = "访达搜索窗口正在使用 %@";
 "error.shortcut.input" = "切换输入法正在使用 %@";

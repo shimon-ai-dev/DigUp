@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         catch {
             let alert = NSAlert()
             alert.messageText = Localization.current.text("error.dataFolders", fallback: "DigUp Test cannot use these data folders")
-            alert.informativeText = "\(error)"
+            alert.informativeText = Localization.current.originalDataRejection()
             alert.runModal()
             NSApp.terminate(nil)
             return

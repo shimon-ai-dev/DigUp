@@ -29,3 +29,16 @@ Run both English and Simplified Chinese, then change macOS per-app language and 
 - Original DigUp: verify it still has separate defaults/index/models and is unaffected by the test app.
 
 No item above has been marked passed through access to the user's Mac. Such access requires a separate explicit authorization.
+
+## Implementation decisions and review
+
+- Localization resources use one small resource-only SwiftPM target so immutable lookups do not inherit the app's MainActor isolation. Packaging verifies its exact bundle name; a packaged app never falls back to a developer build directory.
+- English one/other and Simplified Chinese other plural rules are explicit. Adding other languages requires plural-rule implementation as well as translation files.
+- UI coverage includes the open-at-time preview and copy-confirmation toast outside the original file inventory. Counts were localized with result UI before the later status-formatting tests.
+- Intermediate CI packaging could be superseded only after its Swift test step passed; the delivered commit must pass the complete workflow. Packaging and its macOS CI gate were implemented together because the development host is Linux.
+- The single independent final source review overlapped final candidate packaging. It found two actionable issues: untranslated known data-directory recovery guidance and a checker accepting unknown percent conversions. Both received targeted failing tests before their fixes. See the delivered commit's CI result for final verification.
+- Deferred low-priority test coverage: a combined pending/unfinished/searchable status scenario beyond the existing individual-helper tests. Visual truncation remains a manual check.
+
+## Media-search scope
+
+This UI update does not replace the multimodal model or claim that Chinese image/audio/video retrieval quality has passed. Model inference and package startup checks are not retrieval-quality evaluations. Ordinary images and audio do not gain OCR/transcript keyword indexes through these UI changes. Uninstalling the original app is not needed to use the isolated test app.

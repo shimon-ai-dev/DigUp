@@ -84,6 +84,10 @@ nonisolated struct Localization: Sendable {
         default: return format("duration.hours", fallback: "%.1f h", seconds / 3600)
         }
     }
+    /// Only for the app-owned data-directory validation boundary; unknown errors retain their diagnostic.
+    func originalDataRejection() -> String {
+        text("error.originalData", fallback: "DigUp Test cannot use the original DigUp data directory; choose separate testing data paths")
+    }
     func downloadFailure(_ original: String) -> String {
         format("error.download.context", fallback: "Download failed: %@", original)
     }

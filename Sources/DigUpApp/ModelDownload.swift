@@ -46,7 +46,7 @@ final class ModelDownload {
     init(folder: URL) {
         self.folder = folder
         guard (try? Self.validateDestination(folder)) != nil else {
-            phase = .failed(Localization.current.text("error.originalData", fallback: "The original DigUp data directory cannot be used by DigUp Test"))
+            phase = .failed(Localization.current.originalDataRejection())
             return
         }
         phase = ModelFiles.missing(in: folder).isEmpty ? .ready : .needed
@@ -104,7 +104,7 @@ final class ModelDownload {
     private func next() {
         do { try Self.validateDestination(folder) }
         catch {
-            phase = .failed(Localization.current.downloadFailure(String(describing: error)))
+            phase = .failed(Localization.current.originalDataRejection())
             return
         }
         guard let file = ModelFiles.missing(in: folder).first else {
@@ -204,7 +204,7 @@ final class ModelDownload {
         fetcher = nil
         do { try Self.validateDestination(folder) }
         catch {
-            phase = .failed(Localization.current.downloadFailure(String(describing: error)))
+            phase = .failed(Localization.current.originalDataRejection())
             return
         }
         switch outcome {

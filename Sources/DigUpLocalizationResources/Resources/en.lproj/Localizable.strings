@@ -58,7 +58,7 @@
 "error.index.start" = "Can't start indexing";
 "error.index.stopped" = "Indexing stopped";
 "error.login" = "Cannot change login startup: %@";
-"error.originalData" = "The original DigUp data directory cannot be used by DigUp Test";
+"error.originalData" = "DigUp Test cannot use the original DigUp data directory; choose separate testing data paths";
 "error.shortcut.emoji" = "The emoji picker uses %@";
 "error.shortcut.finder" = "Finder's search window uses %@";
 "error.shortcut.input" = "Switching input sources uses %@";
