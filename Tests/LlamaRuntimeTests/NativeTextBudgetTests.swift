@@ -19,6 +19,11 @@ import Testing
         let embedder = try LlamaEmbedder(models: LlamaModels.locate(), textOnly: true)
         defer { embedder.close() }
         let records = (1...180).map { "公开记录\($0)的租房合同。" }
+        let shared = BorrowedEmbedder(embedder)
+        let probe = Prompts.document(title: "公开", text: "租房合同和苹果预算")
+        #expect(try shared.textTokenCount(probe) == embedder.textTokenCount(probe))
+        #expect(shared.textTokenLimit == embedder.textTokenLimit)
+        shared.close()
         let parts = try embedder.documentChunks(records.joined() + "尾部标记", title: "公开合成回归")
         #expect(parts.count > 1)
         #expect(try parts.allSatisfy {
@@ -30,7 +35,7 @@ import Testing
             Prompts.document(title: "公开合成回归", text: $0)
         })
         #expect(vectors.count == 2)
-        #expect(vectors.allSatisfy { $0.count == Vectors.dimension && $0.allSatisfy(\.isFinite) })
+        #expect(vectors.allSatisfy { $0.count == embedder.info.dim && $0.allSatisfy(\.isFinite) })
         print("NATIVE_TEXT_BUDGET actual tokenizer: \(parts.count) complete parts within \(embedder.textTokenLimit) tokens; 2 inference vectors validated")
     }
 }

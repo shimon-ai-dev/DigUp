@@ -82,6 +82,29 @@ import Testing
         #expect(chunks.last?.hasSuffix("尾部标记") == true)
     }
 
+    @Test func hanPhrasesDoNotBridgeSourceSeparatorsOrChooseTheWrongPage() throws {
+        let store = try IndexStore(directory: folder.appendingPathComponent("separators"))
+        let id = try add(store, path: "/synthetic/pages.pdf")
+        try store.addSegment(file: id, kind: .page, modality: .text, loc: 1, text: "租，房 租。房 租\n房")
+        let searcher = try Searcher(store: store, loadVectors: false)
+        #expect(try searcher.search("租房", queryVector: nil).isEmpty)
+        try store.addSegment(file: id, kind: .page, modality: .text, loc: 2, text: "租房合同已经签署")
+        let hits = try Searcher(store: store, loadVectors: false).search("租房", queryVector: nil)
+        #expect(hits.first?.loc == 2)
+        #expect(hits.first?.excerpt?.contains("«租房»") == true)
+    }
+
+    @Test func filenameKindConstraintIsAppliedBeforeTheCandidateCap() throws {
+        let store = try IndexStore(directory: folder.appendingPathComponent("many-filenames"))
+        for number in 1...110 {
+            try add(store, path: "/synthetic/myVoiceMemo\(number).txt", inode: UInt64(number))
+        }
+        let path = "/synthetic/myVoiceMemoImage.png"
+        try store.insert(Candidate(path: path, kind: .image, size: 1, mtime: 1, inode: 200, device: 1))
+        let hits = try Searcher(store: store, loadVectors: false).search("voice", queryVector: nil, kinds: [.image])
+        #expect(hits.map(\.path) == [path])
+    }
+
     @Test func schemaFiveKeepsStoredTextSearchableAfterUpgrade() throws {
         let directory = folder.appendingPathComponent("migration")
         var store: IndexStore? = try IndexStore(directory: directory)

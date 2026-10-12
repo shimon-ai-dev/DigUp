@@ -307,7 +307,7 @@ final class SharedEmbedder: @unchecked Sendable {
 
     func embedder() throws -> any Embedder {
         if model == nil { model = try make() }
-        return Kept(model!)
+        return BorrowedEmbedder(model!)
     }
 
     func close() {
@@ -315,17 +315,6 @@ final class SharedEmbedder: @unchecked Sendable {
         model = nil
     }
 
-    private final class Kept: Embedder {
-        let model: any Embedder
-        init(_ model: any Embedder) { self.model = model }
-        var info: WorkerInfo { model.info }
-        func embedTexts(_ texts: [String]) throws -> [[Float]] { try model.embedTexts(texts) }
-        func embedImages(_ paths: [String], budget: Int) throws -> [Embedding] {
-            try model.embedImages(paths, budget: budget)
-        }
-        func embedAudio(_ paths: [String]) throws -> [Embedding] { try model.embedAudio(paths) }
-        func close() {}
-    }
 }
 
 /// One JSON object per line on stdout, written straight to the file descriptor (print() would buffer in a pipe).
