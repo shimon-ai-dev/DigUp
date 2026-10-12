@@ -20,7 +20,7 @@ public struct FileRecord: Sendable {
 public final class IndexStore {
     public let directory: URL
     public let db: Database
-    static let schemaVersion: Int64 = 6
+    static let schemaVersion: Int64 = 7
 
     /// Keyword search's tokenizer. Marks (M*) count as letters, so Bengali vowel signs and Arabic harakat stay inside
     /// their words: by default SQLite splits on them ("কলকাতায়" became "কলক", "ত", "য").
@@ -91,7 +91,7 @@ public final class IndexStore {
             if (1...2).contains(version) { try migrateScreenshotText() }
             if (1...3).contains(version) { try migrateVectorNames() }
             if (1...4).contains(version) { try migrateLongFiles() }
-            if (1...5).contains(version) { try migrateChineseSearch() }
+            if (1...6).contains(version) { try migrateChineseSearch() }
         }
     }
 
@@ -139,7 +139,7 @@ public final class IndexStore {
             """)
     }
 
-    /// Schema 5 -> 6: rebuild words from stored originals; filenames have a small,
+    /// Schema 5/6 -> 7: rebuild words with Han source boundaries from stored originals; filenames have a small,
     /// separate substring index. No new source files are read during migration.
     private func migrateChineseSearch() throws {
         try createFilenameIndex()
@@ -173,7 +173,7 @@ public final class IndexStore {
             LEFT JOIN fts ON fts.rowid = s.id
             WHERE f.kind = 'pdf' AND s.kind = 'page' AND s.vec IS NOT NULL AND fts.rowid IS NULL
             """) { reread.insert($0.int(0)) }
-        try db.execute("DROP TABLE fts; ALTER TABLE fts_new RENAME TO fts; PRAGMA user_version = 6;")
+        try db.execute("DROP TABLE fts; ALTER TABLE fts_new RENAME TO fts; PRAGMA user_version = 7;")
         for file in reread { try requeue(file) }
     }
 

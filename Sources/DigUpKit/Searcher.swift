@@ -119,6 +119,9 @@ public final class Searcher {
         if queryVector != nil, !vectorsLoaded { try reload() }
         let fileKind = self.fileKind
         let allowed = { (file: Int64) -> Bool in kinds == nil || fileKind[file].map { kinds!.contains($0) } ?? false }
+        let kindValues: [SQLValue] = (kinds ?? []).map(\.rawValue).sorted().map { .text($0) }
+        let kindSQL = kinds == nil ? "" : kindValues.isEmpty ? " AND 0"
+            : " AND f.kind IN (" + kindValues.map { _ in "?" }.joined(separator: ",") + ")"
 
         // Meaning: score every vector on this query's scale (`meaning`), keep each file's best segment.
         var best: [Int64: (z: Double, cosine: Double, row: Int)] = [:]
@@ -144,8 +147,9 @@ public final class Searcher {
             try store.db.query("""
                 SELECT s.file, s.id, snippet(fts, 1, '«', '»', '…', 12), fts.original FROM fts
                 JOIN segments s ON s.id = fts.rowid
-                WHERE fts MATCH ? ORDER BY bm25(fts, 3.0, 1.0) LIMIT 1000
-                """, [.text(patterns.joined(separator: " OR "))]) { row in
+                JOIN files f ON f.id = s.file
+                WHERE fts MATCH ? \(kindSQL) ORDER BY bm25(fts, 3.0, 1.0) LIMIT 1000
+                """, [.text(patterns.joined(separator: " OR "))] + kindValues) { row in
                 let file = row.int(0)
                 guard words.count < 100, allowed(file), seen.insert(file).inserted else { return }
                 // Text that normalizing changed is quoted as it's written (with its hamza, harakat, joiners).
@@ -176,8 +180,8 @@ public final class Searcher {
                     SELECT f.id, s.id, f.path FROM filename_fts
                     JOIN files f ON f.id = filename_fts.rowid
                     JOIN segments s ON s.file = f.id AND s.kind = 'name'
-                    WHERE filename_fts MATCH ? ORDER BY bm25(filename_fts), f.id LIMIT 100
-                    """, [.text("\"" + term.replacingOccurrences(of: "\"", with: "\"\"") + "\"")]) { row in
+                    WHERE filename_fts MATCH ? \(kindSQL) ORDER BY bm25(filename_fts), f.id LIMIT 100
+                    """, [.text("\"" + term.replacingOccurrences(of: "\"", with: "\"\"") + "\"")] + kindValues) { row in
                     let file = row.int(0)
                     guard allowed(file), seen.contains(file) || words.count < 100 else { return }
                     if seen.insert(file).inserted {

@@ -1,4 +1,5 @@
 import Foundation
+import DigUpKit
 
 /// Timestamped lines in `<index folder>/app.log` and on stderr. This is how the app gets measured during
 /// development (launch, sync, search and indexing timings), so lines say what happened and how long it took.
@@ -8,8 +9,10 @@ nonisolated final class AppLog: @unchecked Sendable {
     private var file: FileHandle?
 
     func open(in folder: URL) {
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent("app.log")
+        guard (try? AppIdentity.validateDataDirectory(folder)) != nil,
+              (try? AppIdentity.validateDataDirectory(url)) != nil else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         if !FileManager.default.fileExists(atPath: url.path) {
             FileManager.default.createFile(atPath: url.path, contents: nil)
         }

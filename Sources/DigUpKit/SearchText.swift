@@ -6,9 +6,18 @@ public enum SearchText {
     /// become adjacent tokens, so "租房" matches inside "租房合同" without losing two-character words.
     public static func indexed(_ text: String) -> String {
         var result = ""
-        for character in normalized(text) {
+        let characters = Array(normalized(text))
+        for (index, character) in characters.enumerated() {
             if isHan(character) { result += " " + String(character) + " " }
-            else { result.append(character) }
+            else {
+                result.append(character)
+                let boundary = !character.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+                let besideHan = (index > 0 && isHan(characters[index - 1]))
+                    || (index + 1 < characters.count && isHan(characters[index + 1]))
+                // Co is indexed but is never a query word. Source separators must
+                // not disappear between adjacent Han tokens.
+                if boundary && besideHan { result += " \u{E000} " }
+            }
         }
         return result.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)

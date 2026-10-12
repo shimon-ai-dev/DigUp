@@ -5,6 +5,8 @@ public final class BorrowedEmbedder: Embedder {
     private let model: any Embedder
     public init(_ model: any Embedder) { self.model = model }
     public var info: WorkerInfo { model.info }
+    public var textTokenLimit: Int { model.textTokenLimit }
+    public func textTokenCount(_ text: String) throws -> Int { try model.textTokenCount(text) }
     public func embedTexts(_ texts: [String]) throws -> [[Float]] { try model.embedTexts(texts) }
     public func embedImages(_ paths: [String], budget: Int) throws -> [Embedding] {
         try model.embedImages(paths, budget: budget)

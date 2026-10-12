@@ -57,18 +57,20 @@ nonisolated struct AppSettings: Sendable {
         return UserDefaults(suiteName: suite)!
     }()
 
-    static func load() -> AppSettings {
+    static func load() throws -> AppSettings {
         let defaults = Self.defaults
         let requestedIndex = defaults.string(forKey: "indexDir").map(folderURL) ?? defaultIndexDirectory
         let requestedModels = defaults.string(forKey: "modelsDir").map(folderURL) ?? ModelFiles.installed
+        try AppIdentity.validateDataDirectory(requestedIndex)
+        try AppIdentity.validateDataDirectory(requestedModels)
         return AppSettings(
             roots: folders(defaults, "roots"),
             excludedFolders: folders(defaults, "excludedFolders"),
             excludedTypes: (defaults.stringArray(forKey: "excludedTypes")
                 ?? defaults.string(forKey: "excludedTypes").map { [$0] } ?? [])
                 .flatMap { IndexOptions.extensions($0) }.sorted(),
-            indexDirectory: AppIdentity.isOriginalDataDirectory(requestedIndex) ? defaultIndexDirectory : requestedIndex,
-            modelsDirectory: AppIdentity.isOriginalDataDirectory(requestedModels) ? ModelFiles.installed : requestedModels,
+            indexDirectory: requestedIndex,
+            modelsDirectory: requestedModels,
             hotkey: defaults.string(forKey: "hotkey") ?? defaultHotkey,
             indexOnBattery: defaults.object(forKey: "indexOnBattery") == nil || defaults.bool(forKey: "indexOnBattery"),
             encoderIdleSeconds: defaults.object(forKey: "encoderIdleSeconds") == nil

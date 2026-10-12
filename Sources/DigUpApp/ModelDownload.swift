@@ -45,8 +45,20 @@ final class ModelDownload {
 
     init(folder: URL) {
         self.folder = folder
+        guard (try? Self.validateDestination(folder)) != nil else {
+            phase = .failed("The original DigUp data directory cannot be used by DigUp Test")
+            return
+        }
         phase = ModelFiles.missing(in: folder).isEmpty ? .ready : .needed
         received = bytesOnDisk()
+    }
+
+    nonisolated private static func validateDestination(_ folder: URL) throws {
+        try AppIdentity.validateDataDirectory(folder)
+        for file in ModelFiles.all {
+            try AppIdentity.validateDataDirectory(folder.appendingPathComponent(file.name))
+            try AppIdentity.validateDataDirectory(folder.appendingPathComponent(file.name + ".partial"))
+        }
     }
 
     var isReady: Bool { phase == .ready }
@@ -90,6 +102,11 @@ final class ModelDownload {
     }
 
     private func next() {
+        do { try Self.validateDestination(folder) }
+        catch {
+            phase = .failed("\(error)")
+            return
+        }
         guard let file = ModelFiles.missing(in: folder).first else {
             phase = .ready
             received = total
@@ -185,6 +202,11 @@ final class ModelDownload {
 
     private func finished(_ file: ModelFiles.File, _ outcome: FileFetcher.Outcome) {
         fetcher = nil
+        do { try Self.validateDestination(folder) }
+        catch {
+            phase = .failed("\(error)")
+            return
+        }
         switch outcome {
         case .downloaded(let partial):
             let seconds = Date().timeIntervalSince(fileStarted)

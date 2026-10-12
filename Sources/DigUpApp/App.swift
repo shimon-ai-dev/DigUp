@@ -25,7 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default: break
         }
 
-        let settings = AppSettings.load()
+        let settings: AppSettings
+        do { settings = try AppSettings.load() }
+        catch {
+            let alert = NSAlert()
+            alert.messageText = "DigUp Test cannot use these data folders"
+            alert.informativeText = "\(error)"
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
         AppLog.shared.open(in: settings.indexDirectory)
         log("launch pid \(getpid()): roots \(settings.roots.map { tildePath($0.path) }) · "
             + "index \(tildePath(settings.indexDirectory.path)) · models \(tildePath(settings.modelsDirectory.path))")
