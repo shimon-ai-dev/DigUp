@@ -40,6 +40,10 @@ DISTRACTORS = [
     'We cleaned the kitchen cabinets and organized the plates, spoons and cups on the shelf.',
     'The train arrives at the city station at noon. Platform three is near the main entrance.',
     'The swimming pool is open today. Bring a towel and goggles for the swimming lesson.',
+    'The lighthouse shines across the harbor while fishing boats return to the shore.',
+    'The choir rehearsed a gentle song in the church before the evening concert.',
+    'A ceramic artist shaped a clay bowl and painted a blue pattern around its rim.',
+    'The radio antenna needs adjustment so the receiver can pick up the weather station.',
 ]
 LATE = 'Prepare the frosting by whipping cream with vanilla. Decorate the finished dessert with fresh strawberries and spread the frosting on top.'
 
@@ -79,7 +83,7 @@ def make(output, renderer):
         raise RuntimeError('Fixture generation requires macOS; no substitute media will be used')
     output.mkdir(parents=True, exist_ok=False)
     root = output / 'inputs'
-    for folder in ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'):
+    for folder in ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'q'):
         (root / folder).mkdir(parents=True)
     scratch = output / 'generation-scratch'; scratch.mkdir()
     manifest = {'schema_version': 1, 'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -115,11 +119,11 @@ def make(output, renderer):
         fixture(path, 'Locally generated macOS Samantha TTS', en, ['audio'])
         pair(topic, query_en, query_zh, [str(path.relative_to(root))], 'audio', 'core_audio', segment='audio')
     for index, text in enumerate(DISTRACTORS, 105):
-        path = root / 'd' / f'f{index:03d}.txt'
+        path = root / 'q' / f'f{index:03d}.txt'
         path.write_text(text + '\n')
         fixture(path, 'Locally generated short fictional text distractor', text, ['chunk'])
     manifest['coverage']['english_speech'] = 'GENERATED: Samantha, 4 required topics; isolated before extra media'
-    manifest['coverage']['interference'] = 'GENERATED: 16 short text distractors; no 16-clip audio upfront cost'
+    manifest['coverage']['interference'] = 'GENERATED: 20 short text distractors; no repeated core audio cost'
     # Exact 90 seconds. Target is completely absent in the first 65 seconds.
     prefix = say_wav('Samantha', DISTRACTORS[0], scratch / 'prefix.wav', scratch)
     target_path = scratch / 'late.wav'
@@ -177,7 +181,7 @@ def make(output, renderer):
         manifest['coverage']['screenshots'] = 'UNTESTED: ' + str(error)
         manifest['generation_errors'].append(str(error))
     for index, text in [(41, TOPICS[0][1]), (42, TOPICS[3][2])]:
-        path = root / 'd' / f'f{index:03d}.txt'; path.write_text(text + '\n')
+        path = root / 'q' / f'f{index:03d}.txt'; path.write_text(text + '\n')
         fixture(path, 'Locally generated public fictional text', text, ['chunk'])
     pair('text-shopping', TOPICS[0][3], TOPICS[0][4], ['d/f041.txt'], 'doc', 'text')
     pair('text-cake', TOPICS[3][3], TOPICS[3][4], ['d/f042.txt'], 'doc', 'text')

@@ -18,11 +18,11 @@ python3 scripts/media-probe/run_probe.py \
   --cli "$(swift build -c release --show-bin-path)/digup" --output "$HOME/Library/Caches/DigUpTest-media-probe"
 ```
 
-The separate `.github/workflows/media-probe.yml` runs only on `ci/chinese-media-probe` or a manual dispatch. It is restricted to the authorized public fork `xieshiqi147258/DigUp`, uses standard `macos-26`, and has a 45-minute job limit. Existing app packaging is not triggered by that branch. No model files or private user files are uploaded. Artifacts contain generated public fixtures, reports/logs, and fixture-only SQLite databases/snapshots so partial progress remains diagnosable.
+The separate `.github/workflows/media-probe.yml` now invokes `--mode remaining`, skipping the completed core/small-N cases. It runs only on `ci/chinese-media-probe` or a manual dispatch. It is restricted to the authorized public fork `xieshiqi147258/DigUp`, uses standard `macos-26`, and has a 45-minute job limit. Existing app packaging is not triggered by that branch. No model files or private user files are uploaded. Artifacts contain generated public fixtures, reports/logs, and fixture-only SQLite databases/snapshots so partial progress remains diagnosable.
 
 ## Fixtures and honest coverage
 
-- Required intelligible English Samantha TTS: shopping for milk/eggs, storm flight delay, 20% quarterly revenue growth, and chocolate cake. Only these four clips enter the first required audio phase. Sixteen short text distractors supply the next interference comparison without an upfront 16-clip audio cost.
+- Required intelligible English Samantha TTS: shopping for milk/eggs, storm flight delay, 20% quarterly revenue growth, and chocolate cake. Only these four clips enter the first required audio phase. Twenty short text distractors supply the next interference comparison without repeating core audio.
 - A separately bounded, last-phase 90-second recording contains only gardening speech during seconds 0–65, then vanilla frosting/strawberry speech during seconds 65–90. Localization requires an audio segment starting at 50 seconds or later and extending past 65 seconds; the 30-second/25-second-hop window can legitimately start before the target.
 - `say -v '?'` inventories installed voices. One shopping clip in Chinese is attempted only when a `zh_CN` voice is listed; no voice is installed. Unavailable/failed Chinese synthesis is labeled UNTESTED. English and Chinese queries still search the same English audio.
 - Locally rendered English airport and Chinese revenue screenshots contain readable text, unlike the synthetic rectangles in the existing reference-vector fixture. The actual index's Apple Vision OCR text is recorded.
@@ -52,6 +52,16 @@ Raw cosine rank is **not** assumed to equal wide fused rank: production search c
 The run ends when all available fixture cases and small-sample comparisons have been recorded, or on an infrastructure blocker/timeout. Missing required English topics, invalid/missing core vectors, core worker failure, and core diagnostic/CLI disagreement fail the infrastructure run. Optional phase failures/timeouts yield explicit PARTIAL observations and UNTESTED queries while preserving core results. Semantic retrieval/localization failures remain explicit `FAIL` rows in an otherwise `COMPLETED` diagnostic, never disguised as passing quality tests. Optional unavailable sources remain `UNTESTED`.
 
 The known behavior where audio/video indexing can mark a file done after an individual embedding returned no vector is **not fixed**. The segment audit detects nil/invalid vectors even when the file state says done. The indexer may discard the original per-embedding error; report the missing vector rather than inventing its cause.
+
+## Remaining-media continuation
+
+Run `run_probe.py --mode remaining` for the third-run continuation. It first attempts an isolated 20-document unrelated-text baseline with a 240-second cap. If that fails, each media case uses an independent index and explicitly reports the small-N gate limitation. It does not reindex the four completed English audio cases or rerun the 1–4-vector comparisons.
+
+Priority: one installed-voice Chinese shopping recording, one bundled photograph, one Chinese screenshot (both English/Chinese queries), video sound and frame pairs, then the 90-second late-topic recording. Two ordinary-text pairs and synthetic noise are attempted only if time remains. The other photograph, English screenshot, and system-chime pairs are deferred and never represented as tested.
+
+The continuation uses only authoritative CLI wide/default calls for these cases. Actual hit FTS keyword ranks remain recorded; a separate keyword-candidate-only launch is omitted. A single native text worker startup computes all query vectors both batched and one query at a time, including an exact prior eight-query zh-revenue canary. Diagnostic scores use the individual-call vectors, matching the CLI query framing. The same 0.001 cosine / 0.01 z crosscheck thresholds remain in force. Batch/single vector differences are measured evidence, not automatic permission to suppress a mismatch. Raw global segment rank across the entire corpus is recorded alongside kind-filtered raw file rank, so a one-file modality filter does not silently make the model ranking look perfect.
+
+Each media phase uses an independent copy of a successfully completed baseline, and copies only its selected public fixture into a neutral directory. Corpus counts, actual stored vectors, precise index paths, and partial snapshots are preserved. Global budget remains 22 minutes.
 
 ## First runner evidence and bounded recovery
 

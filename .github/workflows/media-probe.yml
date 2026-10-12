@@ -125,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           unset DIGUP_WORKER_DIR
-          python3 scripts/media-probe/run_probe.py --cli "$DIGUP_CLI" --output "$PROBE_OUTPUT" \
+          python3 scripts/media-probe/run_probe.py --mode remaining --cli "$DIGUP_CLI" --output "$PROBE_OUTPUT" \
             2>&1 | tee "$RUNNER_TEMP/digup-media-diagnostic.log"
           git diff --exit-code -- Sources Package.swift Package.resolved Resources
 
@@ -161,6 +161,7 @@ jobs:
             ${{ env.PROBE_OUTPUT }}/summary.txt
             ${{ env.PROBE_OUTPUT }}/available-voices.txt
             ${{ env.PROBE_OUTPUT }}/inputs/
+            ${{ env.PROBE_OUTPUT }}/selected/
             ${{ env.PROBE_OUTPUT }}/indices/
             ${{ env.PROBE_OUTPUT }}/snapshots/
             ${{ env.PROBE_OUTPUT }}/logs/

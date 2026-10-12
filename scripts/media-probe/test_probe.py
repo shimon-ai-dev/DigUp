@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 import struct
 import json
+import base64
 import sqlite3
 import tempfile
 import unittest
@@ -47,6 +48,17 @@ class ProbeTests(unittest.TestCase):
             self.assertTrue(snapshot.exists())
             self.assertEqual(probe.read_progress(snapshot)['states'], {'done': 1})
             self.assertEqual(runner.report['phases'][-1]['status'], 'TIMEOUT')
+
+    def test_worker_response_preserves_request_count_and_valid_vectors(self):
+        one = [1.0] + [0.0] * 767
+        response = {'ok': True, 'dim': 768, 'count': 2, 'errors': [None, None],
+                    'vectors': base64.b64encode(struct.pack('<1536f', *(one + one))).decode()}
+        self.assertEqual(probe.decode_response(response, 2), [one, one])
+        with self.assertRaisesRegex(RuntimeError, 'Invalid worker vector response'):
+            probe.decode_response(response, 1)
+        response['errors'] = ['input failed', None]
+        with self.assertRaisesRegex(RuntimeError, 'Invalid worker vector response'):
+            probe.decode_response(response, 2)
 
     def test_half_vector_preserves_nonzero_norm(self):
         self.assertEqual(probe.decode_half(struct.pack('<3e', 0.5, -0.25, 0.0)), [0.5, -0.25, 0.0])

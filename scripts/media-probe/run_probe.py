@@ -8,6 +8,7 @@ import json
 import math
 import os
 import signal
+import shutil
 from pathlib import Path
 import sqlite3
 import struct
@@ -69,6 +70,18 @@ def quality(raw, default, keyword, query):
             'status': 'PASS' if default_rank == 1 else 'FAIL'}
 
 
+def decode_response(result, count):
+    if not result.get('ok') or result.get('dim') != 768 or result.get('count') != count or any(result.get('errors', [])):
+        raise RuntimeError('Invalid worker vector response: ' + str({k:v for k,v in result.items() if k != 'vectors'})[:200])
+    floats = struct.unpack('<' + str(768 * count) + 'f', base64.b64decode(result['vectors']))
+    vectors = [list(floats[i * 768:(i + 1) * 768]) for i in range(count)]
+    if not all(all(math.isfinite(v) for v in vector) and 0.95 <= math.sqrt(sum(v*v for v in vector)) <= 1.05
+               for vector in vectors):
+        raise RuntimeError('Invalid query vector norm/non-finite value')
+    return vectors
+
+
+
 class Probe:
     def __init__(self, cli, output, budget_seconds=1320):
         self.deadline = time.monotonic() + budget_seconds
@@ -90,6 +103,7 @@ class Probe:
                            'Keyword-candidate-only search still computes vectors and semantic weights for keyword candidates.',
                            'Hosted VM reported unsupported Metal operations in the previous run; full-model ready does not prove an input completed.',
                            'No thresholds, model pins, application source, or user indexes are changed.']}
+        self.precomputed_vectors = {}
         self.save()
 
     def save(self):
@@ -227,21 +241,51 @@ class Probe:
                                                              timeout=180, stdin=request).splitlines()]
         ready = next((m for m in messages if m.get('ready')), None)
         result = next((m for m in messages if m.get('id') == 1), {})
-        if not ready or not result.get('ok') or result.get('dim') != 768 or result.get('count') != len(queries) \
-                or any(result.get('errors', [])):
-            raise RuntimeError(f'{label}: invalid worker response: {str(result)[:200]}')
-        floats = struct.unpack('<' + str(768 * len(queries)) + 'f', base64.b64decode(result['vectors']))
-        vectors = [list(floats[i * 768:(i + 1) * 768]) for i in range(len(queries))]
-        if not all(all(math.isfinite(v) for v in vector) and 0.95 <= math.sqrt(sum(v*v for v in vector)) <= 1.05
-                   for vector in vectors):
-            raise RuntimeError('Invalid query vector norm/non-finite value')
+        if not ready:
+            raise RuntimeError('Query worker did not become ready')
         self.report['query_worker_info'] = ready['info']
-        return vectors
+        return decode_response(result, len(queries))
 
-    def evaluate(self, queries, rows, label, required=True):
+    def prepare_remaining_vectors(self, queries):
+        # One native worker startup; compare batched and per-query calls without changing model/backend.
+        prompted = ['task: search result | query: ' + q['q'] for q in queries]
+        requests = [{'id': 1, 'op': 'text', 'inputs': prompted}]
+        requests += [{'id': i + 10, 'op': 'text', 'inputs': [text]} for i, text in enumerate(prompted)]
+        core = [q for q in self.manifest['queries'] if q['group'] == 'core_audio']
+        canary = next(q for q in core if q['id'] == 'zh-revenue')
+        requests += [{'id': 900, 'op': 'text', 'inputs': ['task: search result | query: ' + q['q'] for q in core]},
+                     {'id': 901, 'op': 'text', 'inputs': ['task: search result | query: ' + canary['q']]},
+                     {'id': 999, 'op': 'quit'}]
+        stdin = '\n'.join(json.dumps(r, ensure_ascii=False) for r in requests) + '\n'
+        messages = [json.loads(line) for line in self.command('remaining-query-vectors', ['worker', '--text-only'],
+                                                             timeout=180, stdin=stdin).splitlines()]
+        ready = next((m for m in messages if m.get('ready')), None)
+        if not ready:
+            raise RuntimeError('Query worker did not become ready')
+        responses = {m['id']: m for m in messages if 'id' in m}
+        batch = decode_response(responses[1], len(queries))
+        differences = []
+        for i, query in enumerate(queries):
+            single = decode_response(responses[i + 10], 1)[0]
+            self.precomputed_vectors[query['id']] = single
+            differences.append({'id': query['id'], 'batch_single_cosine': sum(a*b for a,b in zip(batch[i], single)),
+                                'max_component_delta': max(abs(a-b) for a,b in zip(batch[i], single))})
+        original_batch = decode_response(responses[900], len(core))[core.index(canary)]
+        canary_single = decode_response(responses[901], 1)[0]
+        differences.append({'id': 'prior-zh-revenue-canary',
+                            'batch_single_cosine': sum(a*b for a,b in zip(original_batch, canary_single)),
+                            'max_component_delta': max(abs(a-b) for a,b in zip(original_batch, canary_single)),
+                            'batch_vector': original_batch, 'single_vector': canary_single})
+        self.report['query_worker_info'] = ready['info']
+        self.report['batch_single_numerical_comparison'] = differences
+        self.report['numerical_diagnostic_notes'] = ['The prior zh-revenue mismatch was batch-derived diagnostic cosine vs single-query CLI cosine. Same-process batch/single vectors are now preserved, including the exact eight-query prior canary, for verification. A variance explanation is only confirmed when these vectors explain prior stored-media scores and the single-query diagnostic agrees with actual CLI results. No tolerance was changed.']
+        self.report['limitations'].append('Single-query vectors feed diagnostic scores because actual CLI search encodes one query; batch/single variance is measured separately. Tolerances remain 0.001 cosine and 0.01 z.')
+        self.save()
+
+    def evaluate(self, queries, rows, label, required=True, keyword_candidates=True):
         if not queries:
             return
-        vectors = self.query_vectors(queries, label)
+        vectors = [self.precomputed_vectors[q['id']] for q in queries] if all(q['id'] in self.precomputed_vectors for q in queries) else self.query_vectors(queries, label)
         valid = [row for row in rows if row['valid_vector']]
         for query, vector in zip(queries, vectors):
             result = dict(query)
@@ -262,11 +306,14 @@ class Probe:
                         seen.add(row['path'])
                 wide = self.search(query, 'wide')
                 default = self.search(query, 'default')
-                keyword = self.search(query, 'keyword')
+                keyword = self.search(query, 'keyword') if keyword_candidates else []
                 result.update(wide=wide, default=default, keyword_candidate_only=keyword,
                               raw_files=raw_files, query_vector_valid=True)
                 result['quality'] = quality(raw_files, default, keyword, query)
                 result['quality']['wide_rank'] = expected_rank(wide, query)
+                result['quality']['raw_global_segment_rank'] = expected_rank(result['raw_segments'], query)
+                result['corpus_vector_counts'] = self.report['vector_counts']
+                result['keyword_candidate_mode'] = 'RUN' if keyword_candidates else 'NOT_RUN: actual default/wide hit keyword ranks retained'
                 differences = []
                 for hit in wide:
                     candidates = [r for r in raw if r['path'] == hit['path']]
@@ -322,13 +369,88 @@ class Probe:
     def audit(self, rows, fixtures):
         problems = []
         for fixture in fixtures:
-            path = str(self.root / fixture['path'])
+            path = fixture.get('indexed_path', str(self.root / fixture['path']))
             segments = [r for r in rows if r['path'] == path]
             missing = [kind for kind in fixture['expected_segments'] if not any(r['segment'] == kind and
                        (r['valid_vector'] if kind != 'ocr' else True) for r in segments)]
             if missing:
                 problems.append(f"{fixture['path']}: missing/invalid {missing}")
         return problems
+
+    def run_remaining(self):
+        self.report['mode'] = 'remaining-only'
+        self.report['limitations'].append('Completed prior core and 1–4-vector cases are not rerun. This continuation uses new fixture-only indices.')
+        baseline = None
+        baseline_fixtures = [f for f in self.manifest['fixtures'] if f['path'].startswith('q/')]
+        try:
+            self.command('index-text-baseline', ['index', str(self.root / 'q'), '--index', str(self.index)], timeout=240)
+            rows = self.vector_rows()
+            errors = self.audit(rows, baseline_fixtures)
+            if errors:
+                raise RuntimeError('; '.join(errors))
+            baseline = self.index
+            self.report['baseline_vector_counts'] = self.report['vector_counts']
+        except Exception as error:
+            self.report['optional_errors'].append('Text baseline unavailable; falling back to independent small indices: ' + str(error))
+            self.report['limitations'].append('Text baseline incomplete. Independent tiny media indices may be blocked by the already demonstrated small-N default z gate.')
+            self.save()
+        # One primary case per requested modality; video has separate frame and sound pairs.
+        plans = [('g', ['g/f025.wav'], 180), ('b', ['b/f050.jpg'], 120),
+                 ('c', ['c/Screenshot-f032.png'], 120), ('e', ['e/f061.mp4'], 180),
+                 ('h', ['h/f021.wav'], 420), ('d', ['d/f041.txt', 'd/f042.txt'], 120),
+                 ('f', ['f/f023.wav'], 150)]
+        plans = [(folder, [p for p in paths if any(f['path'] == p for f in self.manifest['fixtures'])], timeout)
+                 for folder, paths, timeout in plans]
+        all_queries = [q for q in self.manifest['queries'] if any(p in q['expect'] for _,paths,_ in plans for p in paths)]
+        self.report['selected_query_ids'] = [q['id'] for q in all_queries]
+        self.report['deferred_query_ids'] = [q['id'] for q in self.manifest['queries'] if q['group'] != 'core_audio' and q not in all_queries]
+        self.report['limitations'].append('Generated coverage is fixture availability, not a claim that every generated fixture was encoded. This targeted continuation omits the second photo, English screenshot, and system-chime query pairs.')
+        self.prepare_remaining_vectors(all_queries)
+        for folder, paths, timeout in plans:
+            if not paths:
+                continue
+            queries = [q for q in all_queries if any(p in q['expect'] for p in paths)]
+            if folder in ('d', 'f') and self.deadline - time.monotonic() < 250:
+                self.report['untested_queries'] += [{'id':q['id'], 'reason':'remaining time reserved for primary media'} for q in queries]
+                self.save(); continue
+            phase = self.output / 'indices' / ('remaining-' + folder)
+            if baseline:
+                self.copy_index(baseline, phase)
+            else:
+                phase.mkdir(parents=True, exist_ok=False)
+            self.index = phase
+            selected = self.output / 'selected' / folder
+            selected.mkdir(parents=True, exist_ok=True)
+            fixtures = []
+            for path in paths:
+                target = selected / Path(path).name
+                shutil.copy2(self.root / path, target)
+                original = next(f for f in self.manifest['fixtures'] if f['path'] == path)
+                fixtures.append({**original, 'indexed_path': str(target)})
+            try:
+                self.command('index-remaining-' + folder, ['index', str(selected), '--index', str(self.index)], timeout=timeout)
+                rows = self.vector_rows()
+                errors = self.audit(rows, fixtures)
+                if errors:
+                    raise RuntimeError('; '.join(errors))
+                self.report['phase_audits'].append({'phase':folder, 'index_directory':str(self.index),
+                    'files':self.report['indexed_files'], 'segments':self.report['indexed_segments'],
+                    'ocr':self.report['ocr'], 'vector_counts':self.report['vector_counts']})
+                self.evaluate(queries, rows, 'remaining-' + folder, required=False, keyword_candidates=False)
+            except Exception as error:
+                self.report['optional_errors'].append(f'remaining {folder}: {error}')
+                self.report['untested_queries'] += [{'id':q['id'], 'reason':str(error)} for q in queries]
+                try:
+                    self.vector_rows()
+                    self.report['phase_audits'].append({'phase':folder, 'error':str(error), 'index_directory':str(self.index),
+                        'files':self.report['indexed_files'], 'segments':self.report['indexed_segments'],
+                        'ocr':self.report['ocr'], 'vector_counts':self.report['vector_counts']})
+                except Exception:
+                    pass
+                self.save()
+        self.report['status'] = 'PARTIAL' if self.report['optional_errors'] or self.report['untested_queries'] else 'COMPLETED'
+        self.report['ended_at'] = now(); self.save()
+        return 0
 
     def run(self):
         if (self.index / 'index.sqlite').exists():
@@ -367,7 +489,7 @@ class Probe:
         self.small_samples([q for q in core if q['id'] in ('en-shopping', 'zh-shopping')])
         # Cheap short-text interference comes before any additional media inference.
         baseline = self.index
-        plans = [('d', 'text', 120), ('g', 'other_audio', 180), ('b', 'visual', 180),
+        plans = [('q', 'text', 240), ('d', 'text', 120), ('g', 'other_audio', 180), ('b', 'visual', 180),
                  ('c', 'visual', 180), ('e', 'visual', 180), ('f', 'other_audio', 180), ('h', 'late_audio', 240)]
         for folder, group, timeout in plans:
             fixtures = [f for f in self.manifest['fixtures'] if f['path'].startswith(folder + '/')]
@@ -388,7 +510,7 @@ class Probe:
                 if problems:
                     raise RuntimeError('; '.join(problems))
                 self.evaluate(queries, rows, 'phase-' + folder, required=False)
-                if folder == 'd':
+                if folder == 'q':
                     baseline = self.index
                     self.evaluate([{**q, 'id': q['id'] + '-text-interference', 'group': 'mixed_core_audio'}
                                    for q in core], rows, 'text-interference', required=False)
@@ -418,10 +540,11 @@ def main():
     parser.add_argument('--cli', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--budget-seconds', type=int, default=1320)
+    parser.add_argument('--mode', choices=['core', 'remaining'], default='core')
     args = parser.parse_args()
     probe = Probe(args.cli, args.output, args.budget_seconds)
     try:
-        return probe.run()
+        return probe.run_remaining() if args.mode == 'remaining' else probe.run()
     except Exception as error:
         try:
             probe.vector_rows(); probe.snapshot('terminal-core-failure')
