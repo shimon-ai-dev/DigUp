@@ -58,14 +58,30 @@ jobs:
           git diff --exit-code -- Package.resolved
           test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
 
-      - name: Test without model downloads
-        id: tests
+      - name: Download the pinned public text model for budget tests
         env:
-          DIGUP_MODELS: ${{ runner.temp }}/digup-ci-models-empty
+          DIGUP_MODELS: ${{ runner.temp }}/digup-ci-models
         run: |
           set -euo pipefail
           mkdir -p "$DIGUP_MODELS"
-          echo 'No model files: ReferenceVectorTests will skip; this is not an end-to-end test.'
+          model=embeddinggemma-2-Q8_0.gguf
+          curl --fail --location --retry 2 --connect-timeout 30 --max-time 480 \
+            --output "$DIGUP_MODELS/$model.partial" \
+            "https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/bfcd298762cc34d0357ece5ebdd31791a3a374d8/$model"
+          printf '2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135  %s\n' "$DIGUP_MODELS/$model.partial" \
+            | shasum -a 256 --check
+          mv "$DIGUP_MODELS/$model.partial" "$DIGUP_MODELS/$model"
+          echo 'Pinned public text model verified; native token/inference tests enabled. Media model absent.' \
+            | tee "$RUNNER_TEMP/digup-model-coverage.log"
+
+      - name: Test with the pinned text model
+        id: tests
+        env:
+          DIGUP_MODELS: ${{ runner.temp }}/digup-ci-models
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIGUP_MODELS"
+          echo 'Text-model budget tests enabled. No media model: ReferenceVectorTests skips; this is not an end-to-end test.'
           swift test --jobs 2 2>&1 | tee "$RUNNER_TEMP/digup-swift-test.log"
 
       - name: Build isolated ad-hoc testing bundle
