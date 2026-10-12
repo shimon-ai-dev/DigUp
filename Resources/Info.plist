@@ -48,5 +48,10 @@
 	<string>https://example.invalid/digup-ci/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>dyiW9CWkvqSnsGTWMmzmnkggQBsXpRuHCUIS2RyRkaw=</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
 </dict>
 </plist>

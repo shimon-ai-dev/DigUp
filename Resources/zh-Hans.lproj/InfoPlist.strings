@@ -1,0 +1,6 @@
+/* macOS owns the surrounding permission dialog; these are the app purpose strings. */
+"NSAppleEventsUsageDescription" = "DigUp 请求 QuickTime Player 从与你的搜索匹配的时刻打开录音或视频。";
+"NSDesktopFolderUsageDescription" = "DigUp 为你选择的文件夹建立索引，让你通过描述内容进行搜索。所有内容都保留在这台 Mac 上。";
+"NSDocumentsFolderUsageDescription" = "DigUp 为你选择的文件夹建立索引，让你通过描述内容进行搜索。所有内容都保留在这台 Mac 上。";
+"NSDownloadsFolderUsageDescription" = "DigUp 为你选择的文件夹建立索引，让你通过描述内容进行搜索。所有内容都保留在这台 Mac 上。";
+"NSRemovableVolumesUsageDescription" = "DigUp 为你选择的文件夹建立索引，让你通过描述内容进行搜索。所有内容都保留在这台 Mac 上。";

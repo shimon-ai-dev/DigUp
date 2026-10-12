@@ -28,6 +28,7 @@ def validate(root, required_keys=()):
         for key,entry in plurals[lang].items():
             if key in tables[lang]: raise ValueError(f'duplicate table/plural {key}')
             fmt=entry.get('NSStringLocalizedFormatKey','')
+            if fmt!='%#@n@': raise ValueError(f'{lang}.{key}: renderer requires the n plural variable')
             for name in re.findall(r'%#@(\w+)@',fmt):
                 var=entry.get(name,{})
                 if var.get('NSStringFormatSpecTypeKey')!='NSStringPluralRuleType' or var.get('NSStringFormatValueTypeKey')!='lld' or 'other' not in var:

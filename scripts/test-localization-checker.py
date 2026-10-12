@@ -23,4 +23,7 @@ class CheckerTests(unittest.TestCase):
     def test_plural_missing_other_rejected(self):
         p={'count':{'NSStringLocalizedFormatKey':'%#@n@','n':{'NSStringFormatSpecTypeKey':'NSStringPluralRuleType','NSStringFormatValueTypeKey':'lld','one':'%lld file'}}}
         self.assertNotEqual(self.run_check(self.fixture(plural=p)).returncode,0)
+    def test_unsupported_plural_variable_rejected(self):
+        p={'count':{'NSStringLocalizedFormatKey':'%#@items@','items':{'NSStringFormatSpecTypeKey':'NSStringPluralRuleType','NSStringFormatValueTypeKey':'lld','one':'%lld file','other':'%lld files'}}}
+        self.assertNotEqual(self.run_check(self.fixture(plural=p)).returncode,0)
 if __name__=='__main__': unittest.main()

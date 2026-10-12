@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var app: AppController?
 
     static func main() {
+        if let status = LocalizationSmoke.runIfRequested(arguments: CommandLine.arguments) { exit(status) }
         signal(SIGPIPE, SIG_IGN)   // a helper that just exited must surface as a write error, not kill the app
         let app = NSApplication.shared
         let delegate = AppDelegate()

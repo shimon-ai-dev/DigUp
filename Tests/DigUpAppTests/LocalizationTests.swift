@@ -35,4 +35,16 @@ struct LocalizationTests {
         let name = "100%「合同」.md"
         #expect(loc("zh-Hans").format("test.unknown", fallback: "%@", name) == name)
     }
+    @Test(arguments: ["app", "APP", "bundle"])
+    func packagedAppMissingResourcesDoesNotFallBackToBuildDirectory(suffix: String) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "." + suffix)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let contents = root.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let data = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "synthetic.localization.missing", "CFBundlePackageType": "APPL"], format: .xml, options: 0)
+        try data.write(to: contents.appendingPathComponent("Info.plist"))
+        let app = try #require(Bundle(url: root))
+        #expect(throws: (any Error).self) { try Localization.resourceBundle(appBundle: app) }
+    }
+
 }

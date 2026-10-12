@@ -55,3 +55,14 @@ open -n "$PWD/package/DigUpTest.app" --args \
 ```
 
 Automatic and manual update entry points are disabled in this testing edition, including when launched without debug arguments. Existing public Hugging Face cache weights may be copied read-only into its private model directory after validation; the original app's writable model directory is not shared. Broader model-backed validation and any signed fork release require a separate, explicitly chosen scope. No release destination or fork update feed is configured here.
+
+
+## UI localization gates
+
+The app uses a tiny `DigUpLocalizationResources` resource-only target. This keeps SwiftPM's generated `Bundle.module` accessor outside the UI target's default MainActor isolation. The packaged bundle is `DigUp_DigUpLocalizationResources.bundle`; `build.sh` checks the exact generated accessor and copies the entire bundle before signing.
+
+`python3 scripts/check-localization.py` validates the English/Simplified Chinese key sets, reviewed UI-key inventory, placeholder positions/types and the supported `n` plural schema. Only English one/other and Simplified Chinese other are implemented; additional languages need explicit plural-rule work, not just another translation file.
+
+The archive job runs `scripts/smoke-test-localization.py` against the extracted app. It copies the app outside the checkout, temporarily hides `.build` with guaranteed restoration on ordinary failure/termination, and tests English, Simplified Chinese and unsupported-language fallback. It checks all five bundled permission purpose strings and confirms deleting the nested resource bundle fails closed. This read-only CLI probe exits before the GUI, settings, helper or downloads start.
+
+See `UI-LOCALIZATION.md` for the manual acceptance checklist. CI does not prove layout, VoiceOver or actual macOS permission dialog presentation. The inherited source-folder alias limitation remains unchanged.

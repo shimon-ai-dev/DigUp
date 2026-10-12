@@ -48,6 +48,23 @@ xcrun actool --compile "$APP/Contents/Resources" --platform macosx --target-devi
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"   # over actool's plainer fallback: ours has simplified 16 and 32 px
 cp Resources/Acknowledgements.txt "$APP/Contents/Resources/Acknowledgements.txt"
 
+# One immutable resource-only target; do not copy unrelated dependency bundles.
+RESOURCE_BUNDLE="DigUp_DigUpLocalizationResources.bundle"
+test -d "$BIN_DIR/$RESOURCE_BUNDLE"
+test -f "$BIN_DIR/$RESOURCE_BUNDLE/en.lproj/Localizable.strings"
+# Inspect the generated accessor from this exact toolchain, not a guessed SwiftPM layout.
+ACCESSOR="$(find .build -path '*/DigUpLocalizationResources.build/DerivedSources/resource_bundle_accessor.swift' -print -quit)"
+test -n "$ACCESSOR"
+grep -F "$RESOURCE_BUNDLE" "$ACCESSOR"
+ditto "$BIN_DIR/$RESOURCE_BUNDLE" "$APP/Contents/Resources/$RESOURCE_BUNDLE"
+for LANGUAGE in en zh-Hans; do
+  mkdir -p "$APP/Contents/Resources/$LANGUAGE.lproj"
+  cp "Resources/$LANGUAGE.lproj/InfoPlist.strings" "$APP/Contents/Resources/$LANGUAGE.lproj/InfoPlist.strings"
+  plutil -lint "$APP/Contents/Resources/$LANGUAGE.lproj/InfoPlist.strings"
+done
+python3 scripts/check-localization.py
+
+
 # Sparkle (in-app updates): the framework in Frameworks/, where the app's runpath looks. Its XPC services are for
 # sandboxed apps and its headers for building against it: left out.
 FW="$APP/Contents/Frameworks/Sparkle.framework"
