@@ -1,0 +1,164 @@
+name: macOS ad-hoc build
+
+on:
+  push:
+    branches: [main, ci/macos-adhoc]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Standard hosted runner is free for a public fork. Fail closed elsewhere.
+    if: ${{ github.repository == 'xieshiqi147258/DigUp' && github.event.repository.fork && !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+      LLAMA_REVISION: 4d756bc72bf00a4aacf410ae15a2d315f3db400d
+      SPARKLE_REVISION: eef1a539a373c1f1a320624b1130fc5de7b2e100
+
+    steps:
+      - name: Checkout source and submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Check Apple Silicon toolchain
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee "$RUNNER_TEMP/digup-toolchain.log"
+          grep -qx 'Xcode 26.0.1' "$RUNNER_TEMP/digup-toolchain.log"
+          swift --version | tee -a "$RUNNER_TEMP/digup-toolchain.log"
+          command -v cmake > /dev/null
+          cmake --version | tee -a "$RUNNER_TEMP/digup-toolchain.log"
+
+      - name: Resolve and verify fixed dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p Vendor
+          git -c credential.helper= clone --depth 1 --branch b11461 \
+            https://github.com/ggml-org/llama.cpp.git Vendor/llama.cpp
+          test "$(git -C Vendor/llama.cpp rev-parse HEAD)" = "$LLAMA_REVISION"
+          test "$(git -C Vendor/llama.cpp describe --tags --exact-match)" = b11461
+          scripts/build-llama.sh 2>&1 | tee "$RUNNER_TEMP/digup-llama-build.log"
+          test "$(git -C Vendor/llama.cpp rev-parse HEAD)" = "$LLAMA_REVISION"
+          swift package resolve
+          git diff --exit-code -- Package.resolved
+          test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
+
+      - name: Test without model downloads
+        id: tests
+        env:
+          DIGUP_MODELS: ${{ runner.temp }}/digup-ci-models-empty
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIGUP_MODELS"
+          echo 'No model files: ReferenceVectorTests will skip; this is not an end-to-end test.'
+          swift test --jobs 2 2>&1 | tee "$RUNNER_TEMP/digup-swift-test.log"
+
+      - name: Build isolated ad-hoc testing bundle
+        id: app
+        env:
+          SIGN_ID: '-'
+          RELEASE: '0'
+          BUNDLE_ID: io.github.xieshiqi147258.DigUp.ci
+          VERSION: 0.0.0
+          BUILD_NUMBER: ${{ github.run_number }}
+          SPARKLE_FEED: https://example.invalid/digup-ci/appcast.xml
+        run: |
+          set -euo pipefail
+          # Change the ephemeral build input before signing, never a signed bundle afterwards.
+          /usr/libexec/PlistBuddy -c 'Set :SUEnableAutomaticChecks false' Resources/Info.plist
+          ./build.sh 2>&1 | tee "$RUNNER_TEMP/digup-app-build.log"
+          codesign --verify --deep --strict --verbose=2 build.noindex/DigUp.app
+          git diff --exit-code -- Package.resolved
+          test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
+
+      - name: Archive app and verify the extracted package
+        id: archive
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp LICENSE build.noindex/LICENSE
+          cp docs/ci-macos.md build.noindex/TESTING.md
+          {
+            printf 'Source commit: %s\n' "$GITHUB_SHA"
+            printf 'Workflow run: %s/actions/runs/%s\n' "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            printf 'llama.cpp: b11461 (%s) plus scripts/llama.cpp-no-logits.patch\n' "$LLAMA_REVISION"
+            printf 'Sparkle: 2.10.0 (%s)\n' "$SPARKLE_REVISION"
+            printf 'Signing: ad-hoc, no notarization. Models: not included.\n'
+            printf 'Tests: no-model baseline; ReferenceVectorTests skipped. No end-to-end validation.\n'
+            cat "$RUNNER_TEMP/digup-toolchain.log"
+          } > build.noindex/BUILD-INFO.txt
+          archive="DigUp-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
+          # tar preserves executable modes and symlinks; do not upload the .app directory directly.
+          tar -czf "dist/$archive" -C build.noindex DigUp.app LICENSE TESTING.md BUILD-INFO.txt
+          verify_dir="$(mktemp -d "$RUNNER_TEMP/digup-archive.XXXXXX")"
+          tar -xzpf "dist/$archive" -C "$verify_dir"
+          python3 - build.noindex/DigUp.app "$verify_dir/DigUp.app" <<'PY'
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          def manifest(root):
+              result = {}
+              for directory, folders, files in os.walk(root, followlinks=False):
+                  for name in folders + files:
+                      path = Path(directory) / name
+                      meta = path.lstat()
+                      result[str(path.relative_to(root))] = (
+                          stat.S_IFMT(meta.st_mode), stat.S_IMODE(meta.st_mode),
+                          os.readlink(path) if path.is_symlink() else None,
+                      )
+              return result
+
+          assert manifest(Path(sys.argv[1])) == manifest(Path(sys.argv[2])), 'Archive changed modes, paths or symlinks'
+          PY
+          test -x "$verify_dir/DigUp.app/Contents/MacOS/DigUp"
+          test -x "$verify_dir/DigUp.app/Contents/Helpers/digup"
+          codesign --verify --deep --strict --verbose=2 "$verify_dir/DigUp.app"
+          (cd dist && shasum -a 256 "$archive" > "$archive.sha256" && shasum -a 256 --check "$archive.sha256")
+
+      - name: Upload testing package and checksum
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digup-ci-macos-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Record verification scope
+        if: ${{ always() }}
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          BUILD_OUTCOME: ${{ steps.app.outcome }}
+          ARCHIVE_OUTCOME: ${{ steps.archive.outcome }}
+        run: |
+          {
+            printf 'Tests: %s; app build: %s; archive verification: %s.\n\n' "$TEST_OUTCOME" "$BUILD_OUTCOME" "$ARCHIVE_OUTCOME"
+            printf 'No model files are downloaded. ReferenceVectorTests is skipped by its model-presence condition.\n\n'
+            printf 'This ad-hoc, non-notarized testing package is not an official release or an end-to-end validation.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build and test logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digup-ci-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/digup-*.log
+          if-no-files-found: ignore
+          retention-days: 7
