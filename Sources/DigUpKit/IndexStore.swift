@@ -20,7 +20,7 @@ public struct FileRecord: Sendable {
 public final class IndexStore {
     public let directory: URL
     public let db: Database
-    static let schemaVersion: Int64 = 5
+    static let schemaVersion: Int64 = 6
 
     /// Keyword search's tokenizer. Marks (M*) count as letters, so Bengali vowel signs and Arabic harakat stay inside
     /// their words: by default SQLite splits on them ("কলকাতায়" became "কলক", "ত", "য").
@@ -88,6 +88,7 @@ public final class IndexStore {
             if (1...2).contains(version) { try migrateScreenshotText() }
             if (1...3).contains(version) { try migrateVectorNames() }
             if (1...4).contains(version) { try migrateLongFiles() }
+            if (1...5).contains(version) { try migrateChineseSearch() }
         }
     }
 
@@ -123,6 +124,46 @@ public final class IndexStore {
             CREATE VIRTUAL TABLE fts USING fts5(\(Self.ftsColumns));
             PRAGMA user_version = \(Self.schemaVersion);
             """)
+        try createFilenameIndex()
+    }
+
+    private func createFilenameIndex() throws {
+        try db.execute("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS filename_fts USING fts5(name, tokenize = 'trigram');
+            CREATE TRIGGER IF NOT EXISTS files_delete_filename AFTER DELETE ON files BEGIN
+                DELETE FROM filename_fts WHERE rowid = old.id;
+            END;
+            """)
+    }
+
+    /// Schema 5 -> 6: rebuild words from stored originals; filenames have a small,
+    /// separate substring index. No new source files are read during migration.
+    private func migrateChineseSearch() throws {
+        try createFilenameIndex()
+        try db.execute("DELETE FROM filename_fts; CREATE VIRTUAL TABLE fts_new USING fts5(\(Self.ftsColumns));")
+        var reread = Set<Int64>()
+        try db.query("""
+            SELECT s.id, s.file, s.kind, f.path, f.kind, fts.name, coalesce(fts.original, fts.body)
+            FROM fts JOIN segments s ON s.id = fts.rowid JOIN files f ON f.id = s.file
+            """) { row in
+            let text = row.text(6) ?? ""
+            let path = row.text(3) ?? ""
+            let name = row.text(2) == "name" ? Self.nameText(path) : row.text(5) ?? ""
+            let body = row.text(2) == "name" ? Self.folderText(path) : text
+            try db.run("INSERT INTO fts_new(rowid, name, body, original) VALUES(?, ?, ?, ?)",
+                       [.int(row.int(0)), .text(SearchText.indexed(name))] + Self.keywordText(body))
+            // Old long passages can contain truncated vectors or obsolete overlap.
+            if ["doc", "pdf"].contains(row.text(4) ?? ""), text.count >= 1800,
+               ["page", "page_image", "chunk"].contains(row.text(2) ?? "") {
+                reread.insert(row.int(1))
+            }
+        }
+        try db.query("SELECT id, path FROM files") { row in
+            try db.run("INSERT INTO filename_fts(rowid, name) VALUES(?, ?)",
+                       [.int(row.int(0)), .text(SearchText.normalized(Self.nameText(row.text(1) ?? "")).lowercased())])
+        }
+        try db.execute("DROP TABLE fts; ALTER TABLE fts_new RENAME TO fts; PRAGMA user_version = 6;")
+        for file in reread { try requeue(file) }
     }
 
     /// Schema 1 → 2: keyword search with whole Bengali and Arabic words (`tokenizer`) over normalized text
@@ -263,9 +304,11 @@ public final class IndexStore {
     public func move(_ id: Int64, to path: String) throws {
         try db.run("UPDATE files SET path = ? WHERE id = ?", [.text(path), .int(id)])
         try db.run("""
-            UPDATE fts SET name = ?, body = ? WHERE rowid IN (SELECT id FROM segments WHERE file = ? AND kind = 'name')
-            """, [.text(SearchText.normalized(Self.nameText(path))), .text(SearchText.normalized(Self.folderText(path))),
-                  .int(id)])
+            UPDATE fts SET name = ?, body = ?, original = ?
+            WHERE rowid IN (SELECT id FROM segments WHERE file = ? AND kind = 'name')
+            """, [.text(SearchText.indexed(Self.nameText(path)))] + Self.keywordText(Self.folderText(path)) + [.int(id)])
+        try db.run("UPDATE filename_fts SET name = ? WHERE rowid = ?",
+                   [.text(SearchText.normalized(Self.nameText(path)).lowercased()), .int(id)])
     }
 
     public func delete(_ id: Int64) throws {
@@ -383,15 +426,17 @@ public final class IndexStore {
 
     /// `body` and `original` for keyword search: the normalized text, and the text as written if that differs.
     static func keywordText(_ text: String) -> [SQLValue] {
-        let normalized = SearchText.normalized(text)
+        let normalized = SearchText.indexed(text)
         return [.text(normalized), normalized == text ? .null : .text(text)]
     }
 
     private func addNameRow(file: Int64, path: String) throws {
         try db.run("INSERT INTO segments(file, kind, modality) VALUES(?, 'name', 'none')", [.int(file)])
-        try db.run("INSERT INTO fts(rowid, name, body) VALUES(?, ?, ?)",
-                   [.int(db.lastInsertID), .text(SearchText.normalized(Self.nameText(path))),
-                    .text(SearchText.normalized(Self.folderText(path)))])
+        try db.run("INSERT INTO fts(rowid, name, body, original) VALUES(?, ?, ?, ?)",
+                   [.int(db.lastInsertID), .text(SearchText.indexed(Self.nameText(path)))]
+                    + Self.keywordText(Self.folderText(path)))
+        try db.run("INSERT INTO filename_fts(rowid, name) VALUES(?, ?)",
+                   [.int(file), .text(SearchText.normalized(Self.nameText(path)).lowercased())])
     }
 
     private func deleteSegments(of file: Int64, keepingName: Bool) throws {

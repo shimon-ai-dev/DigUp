@@ -138,6 +138,7 @@ public final class Searcher {
         var words: [(file: Int64, segment: Int64, snippet: String?)] = []
         var coverage: [Int64: Double] = [:]   // share of the query's words found anywhere in the file
         let patterns = identifier.map { [CodeLookup.phrase($0)] } ?? Self.patterns(terms, prefixLast: prefixLast)
+        var matchedByTerm = Array(repeating: Set<Int64>(), count: patterns.count)
         if !patterns.isEmpty {
             var seen = Set<Int64>()
             try store.db.query("""
@@ -153,11 +154,40 @@ public final class Searcher {
             }
             if !words.isEmpty {
                 let files = words.map { String($0.file) }.joined(separator: ",")
-                for pattern in patterns {
+                for (index, pattern) in patterns.enumerated() {
                     try store.db.query("""
                         SELECT DISTINCT s.file FROM fts JOIN segments s ON s.id = fts.rowid
                         WHERE fts MATCH ? AND s.file IN (\(files))
-                        """, [.text(pattern)]) { coverage[$0.int(0), default: 0] += 1 / Double(patterns.count) }
+                        """, [.text(pattern)]) {
+                        matchedByTerm[index].insert($0.int(0))
+                        coverage[$0.int(0), default: 0] += 1 / Double(patterns.count)
+                    }
+                }
+            }
+        }
+
+        // Substrings of filenames only, through SQLite's trigram index. Two-character
+        // Han terms already use contiguous character phrases above; short Latin
+        // terms deliberately have no table-scan fallback. Code identifiers stay exact.
+        if identifier == nil {
+            var seen = Set(words.map(\.file))
+            for (index, term) in terms.enumerated() where term.count >= 3 && term.count <= 128 {
+                try store.db.query("""
+                    SELECT f.id, s.id, f.path FROM filename_fts
+                    JOIN files f ON f.id = filename_fts.rowid
+                    JOIN segments s ON s.file = f.id AND s.kind = 'name'
+                    WHERE filename_fts MATCH ? ORDER BY bm25(filename_fts), f.id LIMIT 100
+                    """, [.text("\"" + term.replacingOccurrences(of: "\"", with: "\"\"") + "\"")]) { row in
+                    let file = row.int(0)
+                    guard allowed(file), seen.contains(file) || words.count < 100 else { return }
+                    if seen.insert(file).inserted {
+                        words.append((file, row.int(1), row.text(2).flatMap {
+                            SearchText.snippet(IndexStore.nameText($0), terms: terms, insideFilename: true)
+                        }))
+                    }
+                    if matchedByTerm[index].insert(file).inserted {
+                        coverage[file, default: 0] += 1 / Double(patterns.count)
+                    }
                 }
             }
         }
@@ -384,7 +414,7 @@ public final class Searcher {
     static func patterns(_ terms: [String], prefixLast: Bool) -> [String] {
         terms.enumerated().map { index, term in
             let prefix = (prefixLast && index == terms.count - 1) || SearchText.inflects(term)
-            return "\"\(term)\"" + (prefix ? "*" : "")
+            return "\"\(SearchText.indexed(term))\"" + (prefix ? "*" : "")
         }
     }
 
