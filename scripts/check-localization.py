@@ -6,6 +6,8 @@ ENTRY=re.compile(r'\s*("(?:\\.|[^"\\])*")\s*=\s*("(?:\\.|[^"\\])*")\s*;',re.S)
 TOKEN=re.compile(r'%(?:(\d+)\$)?(?:[-+0 #]*\d*(?:\.\d+)?)?(@|lld|ld|d|u|f|g|s)|%#@([A-Za-z0-9_]+)@')
 def placeholders(s):
     s=s.replace('%%',''); out=[]; n=0
+    residual=TOKEN.sub('',s)
+    if '%' in residual: raise ValueError(f'Unsupported or incomplete format conversion: {s!r}')
     for m in TOKEN.finditer(s):
         if m[3]: out.append(('plural',m[3]));continue
         n+=1; out.append((int(m[1] or n),m[2]))

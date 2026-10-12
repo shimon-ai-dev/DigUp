@@ -26,4 +26,10 @@ class CheckerTests(unittest.TestCase):
     def test_unsupported_plural_variable_rejected(self):
         p={'count':{'NSStringLocalizedFormatKey':'%#@items@','items':{'NSStringFormatSpecTypeKey':'NSStringPluralRuleType','NSStringFormatValueTypeKey':'lld','one':'%lld file','other':'%lld files'}}}
         self.assertNotEqual(self.run_check(self.fixture(plural=p)).returncode,0)
+    def test_unknown_percent_conversions_rejected(self):
+        for value in ['你好 %@ %n', '你好 %@ %q', '你好 %@ %']:
+            with self.subTest(value=value):
+                self.assertNotEqual(self.run_check(self.fixture(zh={'a':value})).returncode,0)
+    def test_literal_percent_allowed(self):
+        self.assertEqual(self.run_check(self.fixture(en={'a':'100%% %@'},zh={'a':'100%% %@'})).returncode,0)
 if __name__=='__main__': unittest.main()

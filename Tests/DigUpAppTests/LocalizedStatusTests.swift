@@ -30,6 +30,11 @@ struct LocalizedStatusTests {
         #expect(loc("en").durationEstimate(120) == "2 min")
         #expect(zh.indexingProgress(done: 1, total: 2).hasPrefix("正在索引"))
     }
+    @Test func originalDataRejectionIncludesLocalizedRecovery() {
+        let zh = loc("zh-Hans")
+        #expect(zh.originalDataRejection() == "DigUp Test 不能使用原版 DigUp 的数据目录；请选择独立的测试数据目录")
+        #expect(loc("en").originalDataRejection().contains("choose separate testing data paths"))
+    }
     @Test func knownErrorsHaveLocalizedContext() {
         let zh = loc("zh-Hans")
         #expect(zh.text("error.index.open", fallback: "Can't open the index") == "无法打开索引")
