@@ -69,7 +69,7 @@ struct ResultRow: Identifiable, Equatable {
     var place: String? {
         guard let loc else { return nil }
         switch segment {
-        case .page, .pageImage: return "p. \(Int(loc))"
+        case .page, .pageImage: return Localization.current.format("result.pageBadge", fallback: "p. %lld", Int64(loc))
         case .frame: return Self.clock(loc)
         case .audio: return kind == .video ? "♪ \(Self.clock(loc))" : Self.clock(loc)
         case .lines: return Int(loc) == Int(locEnd ?? loc) ? "L\(Int(loc))" : "L\(Int(loc))–\(Int(locEnd ?? loc))"
@@ -83,8 +83,8 @@ struct ResultRow: Identifiable, Equatable {
         guard let loc else { return nil }
         let (first, last) = (Int(loc), Int(locEnd ?? loc))
         switch segment {
-        case .lines: return first == last ? "line \(first)" : "lines \(first)–\(last)"
-        case .cells: return first == last ? "cell \(first)" : "cells \(first)–\(last)"
+        case .lines: return first == last ? Localization.current.format("result.line", fallback: "line %lld", Int64(first)) : Localization.current.format("result.lineRange", fallback: "lines %lld–%lld", Int64(first), Int64(last))
+        case .cells: return first == last ? Localization.current.format("result.cell", fallback: "cell %lld", Int64(first)) : Localization.current.format("result.cellRange", fallback: "cells %lld–%lld", Int64(first), Int64(last))
         default: return nil
         }
     }
@@ -96,19 +96,19 @@ struct ResultRow: Identifiable, Equatable {
 
     /// Why it's here, in a few words: "Matches the picture", "Matches the frame at 0:06".
     var reason: String {
-        guard matchedMeaning else { return matchedWords ? "Has your words" : "Matches its name" }
+        guard matchedMeaning else { return matchedWords ? Localization.current.text("result.reason.words", fallback: "Has your words") : Localization.current.text("result.reason.name", fallback: "Matches its name") }
         let place = loc.map(Self.clock) ?? ""
-        let page = loc.map { "page \(Int($0))" } ?? "a page"
+        let page = loc.map { Localization.current.format("result.page", fallback: "page %lld", Int64($0)) } ?? Localization.current.text("result.aPage", fallback: "a page")
         switch segment {
-        case .image: return kind == .screenshot ? "Matches what's on screen" : "Matches the picture"
-        case .ocr: return "Matches the text in it"
-        case .frame: return "Matches the frame at \(place)"
-        case .audio: return kind == .video ? "Matches the sound at \(place)" : "Matches what's heard at \(place)"
-        case .page: return "Matches the text on \(page)"
-        case .pageImage: return "Matches \(page)"
-        case .chunk: return "Matches its text"
-        case .name: return "Matches its name"
-        case .lines, .cells: return "Matches \(span ?? "the code")"
+        case .image: return kind == .screenshot ? Localization.current.text("result.reason.screen", fallback: "Matches what's on screen") : Localization.current.text("result.reason.image", fallback: "Matches the picture")
+        case .ocr: return Localization.current.text("result.reason.ocr", fallback: "Matches the text in it")
+        case .frame: return Localization.current.format("result.reason.frame", fallback: "Matches the frame at %@", place)
+        case .audio: return kind == .video ? Localization.current.format("result.reason.sound", fallback: "Matches the sound at %@", place) : Localization.current.format("result.reason.heard", fallback: "Matches what's heard at %@", place)
+        case .page: return Localization.current.format("result.reason.pageText", fallback: "Matches the text on %@", page)
+        case .pageImage: return Localization.current.format("result.reason.page", fallback: "Matches %@", page)
+        case .chunk: return Localization.current.text("result.reason.text", fallback: "Matches its text")
+        case .name: return Localization.current.text("result.reason.name", fallback: "Matches its name")
+        case .lines, .cells: return Localization.current.format("result.reason.code", fallback: "Matches %@", span ?? Localization.current.text("result.code", fallback: "the code"))
         }
     }
 
@@ -118,9 +118,9 @@ struct ResultRow: Identifiable, Equatable {
         if kind == .code {
             var parts = [CodeExtractor.language(of: url.path)]
             if let cells = info["cells"].flatMap(Int.init) {
-                parts.append(cells == 1 ? "1 cell" : "\(cells) cells")
+                parts.append(Localization.current.count("count.cells", cells, one: "%lld cell", other: "%lld cells"))
             } else if let lines = info["lines"].flatMap(Int.init) {
-                parts.append(lines == 1 ? "1 line" : "\(lines.formatted()) lines")
+                parts.append(Localization.current.count("count.lines", lines, one: "%lld line", other: "%lld lines"))
             }
             parts.append(modified.formatted(date: .abbreviated, time: .omitted))
             if size > 0 { parts.append(bytes(size)) }
@@ -131,9 +131,10 @@ struct ResultRow: Identifiable, Equatable {
         // A long file still being read (`Indexer.finishLongFiles`): what isn't read yet can't match.
         let readTo = info["read_to"].flatMap(Int.init)
         if let pages = info["pages"].flatMap(Int.init) {
-            parts.append((pages == 1 ? "1 page" : "\(pages) pages") + (readTo.map { ", \($0) read so far" } ?? ""))
+            let total = Localization.current.count("count.pages", pages, one: "%lld page", other: "%lld pages")
+            parts.append(readTo.map { Localization.current.format("result.pagesRead", fallback: "%@, %lld read so far", total, Int64($0)) } ?? total)
         } else if readTo != nil {
-            parts.append("partly read so far")
+            parts.append(Localization.current.text("result.partial", fallback: "partly read so far"))
         }
         if let duration { parts.append(Self.clock(duration)) }
         if size > 0 { parts.append(bytes(size)) }
@@ -169,12 +170,12 @@ enum ResultGroupKind: CaseIterable {
 
     var title: String {
         switch self {
-        case .screenshots: "Screenshots"
-        case .images: "Images"
-        case .documents: "Documents"
-        case .video: "Video"
-        case .audio: "Audio"
-        case .code: "Code"
+        case .screenshots: Localization.current.text("kind.screenshots", fallback: "Screenshots")
+        case .images: Localization.current.text("kind.images", fallback: "Images")
+        case .documents: Localization.current.text("kind.documents", fallback: "Documents")
+        case .video: Localization.current.text("kind.video", fallback: "Video")
+        case .audio: Localization.current.text("kind.audio", fallback: "Audio")
+        case .code: Localization.current.text("kind.code", fallback: "Code")
         }
     }
 
@@ -246,13 +247,13 @@ struct ResultSet: Equatable {
 extension FileKind {
     var title: String {
         switch self {
-        case .screenshot: "Screenshot"
-        case .image: "Image"
+        case .screenshot: Localization.current.text("kind.screenshot", fallback: "Screenshot")
+        case .image: Localization.current.text("kind.image", fallback: "Image")
         case .pdf: "PDF"
-        case .doc: "Document"
-        case .audio: "Audio"
-        case .video: "Video"
-        case .code: "Code"
+        case .doc: Localization.current.text("kind.document", fallback: "Document")
+        case .audio: Localization.current.text("kind.audio", fallback: "Audio")
+        case .video: Localization.current.text("kind.video", fallback: "Video")
+        case .code: Localization.current.text("kind.code", fallback: "Code")
         }
     }
 

@@ -132,39 +132,39 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(header)
         menu.addItem(.separator())
         if let version = model.updateAvailable {
-            menu.addItem(ActionMenuItem("Update to DigUp \(version)…") { [weak self] in self?.onCheckForUpdates() })
+            menu.addItem(ActionMenuItem(Localization.current.format("menu.updateVersion", fallback: "Update to DigUp %@…", version)) { [weak self] in self?.onCheckForUpdates() })
             menu.addItem(.separator())
         }
 
         if !model.hasFolders {
-            menu.addItem(ActionMenuItem("Choose Folders to Search…") { [weak self] in self?.onChooseFolders() })
+            menu.addItem(ActionMenuItem(Localization.current.text("menu.chooseFolders", fallback: "Choose Folders to Search…")) { [weak self] in self?.onChooseFolders() })
         }
-        let search = ActionMenuItem("Search…") { [weak self] in self?.onSearch() }
+        let search = ActionMenuItem(Localization.current.text("menu.search", fallback: "Search…")) { [weak self] in self?.onSearch() }
         if let hotkey = model.hotkey, let (key, modifiers) = hotkey.menuEquivalent {
             search.keyEquivalent = key
             search.keyEquivalentModifierMask = modifiers
         }
         menu.addItem(search)
-        menu.addItem(ActionMenuItem("Open DigUp") { [weak self] in self?.onOpenWindow() })
+        menu.addItem(ActionMenuItem(Localization.current.text("menu.open", fallback: "Open DigUp")) { [weak self] in self?.onOpenWindow() })
         if model.hasFolders {
             menu.addItem(.separator())
             let paused = model.status.paused
-            menu.addItem(ActionMenuItem(paused ? "Resume Indexing" : "Pause Indexing") { [weak self] in
+            menu.addItem(ActionMenuItem(paused ? Localization.current.text("menu.resume", fallback: "Resume Indexing") : Localization.current.text("menu.pause", fallback: "Pause Indexing"), id: paused ? .resumeIndexing : .pauseIndexing) { [weak self] in
                 self?.onPauseChanged(!paused)
             })
         }
         switch model.download.phase {
         case .failed, .needed:
-            menu.addItem(ActionMenuItem("Download the Model") { [weak self] in self?.model.download.start() })
+            menu.addItem(ActionMenuItem(Localization.current.text("menu.download", fallback: "Download the Model")) { [weak self] in self?.model.download.start() })
         default:
             break
         }
         menu.addItem(.separator())
-        menu.addItem(ActionMenuItem("Settings…", key: ",") { [weak self] in self?.onSettings() })
+        menu.addItem(ActionMenuItem(Localization.current.text("menu.settings", fallback: "Settings…"), key: ",") { [weak self] in self?.onSettings() })
         if model.updateAvailable == nil {
-            menu.addItem(ActionMenuItem("Check for Updates…") { [weak self] in self?.onCheckForUpdates() })
+            menu.addItem(ActionMenuItem(Localization.current.text("menu.updates", fallback: "Check for Updates…")) { [weak self] in self?.onCheckForUpdates() })
         }
-        menu.addItem(ActionMenuItem("Quit DigUp", key: "q") { NSApp.terminate(nil) })
+        menu.addItem(ActionMenuItem(Localization.current.text("menu.quit", fallback: "Quit DigUp"), key: "q") { NSApp.terminate(nil) })
     }
 
     /// The menu as text, for the -debugMenu launch argument (menus can't be clicked from a script).
@@ -178,13 +178,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         }.joined(separator: " | ")
     }
 
-    /// Runs a menu item by title, for -debugMenu.
-    func performItem(titled title: String) {
+    /// Debug actions use stable identities, independent of the displayed language.
+    func performItem(id: MenuActionID) {
         let menu = NSMenu()
         menuNeedsUpdate(menu)
-        guard let item = menu.items.first(where: { $0.title == title }), let action = item.action else { return }
-        NSApp.sendAction(action, to: item.target, from: item)
+        id.perform(in: menu)
     }
+
 }
 
 /// The top of the menu: the status line, a detail (where, or how long), and progress while there is some.
@@ -216,13 +216,13 @@ struct MenuStatusView: View {
     private var detail: String? {
         if model.download.isActive { return model.download.progressText }
         if case .failed(let message) = model.download.phase { return message }
-        guard model.hasFolders else { return "Pick the folders it should search." }
+        guard model.hasFolders else { return Localization.current.text("menu.noFolders", fallback: "Pick the folders it should search.") }
         let missing = Set(model.status.missingRoots), unreadable = Set(model.status.unreadableRoots)
         let names = model.settings.roots.map { root in
-            root.lastPathComponent + (missing.contains(root.path) ? " (not connected)"
-                                      : unreadable.contains(root.path) ? " (no access)" : "")
+            root.lastPathComponent + (missing.contains(root.path) ? Localization.current.text("folder.disconnected.suffix", fallback: " (not connected)")
+                                      : unreadable.contains(root.path) ? Localization.current.text("folder.noAccess.suffix", fallback: " (no access)") : "")
         }
-        return "In " + names.joined(separator: ", ")
+        return Localization.current.format("menu.folderList", fallback: "In %@", names.joined(separator: ", "))
     }
 }
 
@@ -237,10 +237,22 @@ private final class MenuAction: NSObject {
     @objc func run() { handler() }
 }
 
-func ActionMenuItem(_ title: String, key: String = "", handler: @escaping () -> Void) -> NSMenuItem {
+func ActionMenuItem(_ title: String, key: String = "", id: MenuActionID? = nil, handler: @escaping () -> Void) -> NSMenuItem {
     let action = MenuAction(handler)
     let item = NSMenuItem(title: title, action: #selector(MenuAction.run), keyEquivalent: key)
+    item.identifier = id.map { NSUserInterfaceItemIdentifier($0.rawValue) }
     item.target = action
     item.representedObject = action  // `target` is weak; this keeps the action alive
     return item
+}
+
+/// Display text must never be used to address a menu command.
+enum MenuActionID: String {
+    case pauseIndexing, resumeIndexing
+
+    func perform(in menu: NSMenu) {
+        guard let item = menu.items.first(where: { $0.identifier?.rawValue == rawValue }), item.isEnabled,
+              let action = item.representedObject as? MenuAction else { return }
+        action.run()
+    }
 }

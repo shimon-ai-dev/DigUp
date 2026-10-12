@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do { settings = try AppSettings.load() }
         catch {
             let alert = NSAlert()
-            alert.messageText = "DigUp Test cannot use these data folders"
+            alert.messageText = Localization.current.text("error.dataFolders", fallback: "DigUp Test cannot use these data folders")
             alert.informativeText = "\(error)"
             alert.runModal()
             NSApp.terminate(nil)
@@ -69,31 +69,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mainMenu = NSMenu()
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About DigUp", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+        appMenu.addItem(withTitle: Localization.current.text("menu.about", fallback: "About DigUp"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                         keyEquivalent: "")
-        appMenu.addItem(ActionMenuItem("Check for Updates…") { [weak app] in app?.updates.checkNow() })
+        appMenu.addItem(ActionMenuItem(Localization.current.text("menu.updates", fallback: "Check for Updates…")) { [weak app] in app?.updates.checkNow() })
         appMenu.addItem(.separator())
-        appMenu.addItem(ActionMenuItem("Settings…", key: ",") { [weak app] in app?.showSettings() })
+        appMenu.addItem(ActionMenuItem(Localization.current.text("menu.settings", fallback: "Settings…"), key: ",") { [weak app] in app?.showSettings() })
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide DigUp", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit DigUp", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: Localization.current.text("menu.hide", fallback: "Hide DigUp"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: Localization.current.text("menu.quit", fallback: "Quit DigUp"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
-        let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(ActionMenuItem("New Search", key: "n") { [weak app] in app?.showSearchWindow(query: "") })
-        fileMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let fileMenu = NSMenu(title: Localization.current.text("menu.file", fallback: "File"))
+        fileMenu.addItem(ActionMenuItem(Localization.current.text("menu.newSearch", fallback: "New Search"), key: "n") { [weak app] in app?.showSearchWindow(query: "") })
+        fileMenu.addItem(withTitle: Localization.current.text("common.close", fallback: "Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
 
-        let editMenu = NSMenu(title: "Edit")
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let editMenu = NSMenu(title: Localization.current.text("menu.edit", fallback: "Edit"))
+        editMenu.addItem(withTitle: Localization.current.text("menu.undo", fallback: "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: Localization.current.text("menu.redo", fallback: "Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: Localization.current.text("menu.cut", fallback: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: Localization.current.text("common.copy", fallback: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: Localization.current.text("menu.paste", fallback: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: Localization.current.text("menu.selectAll", fallback: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
-        let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "")
+        let windowMenu = NSMenu(title: Localization.current.text("menu.window", fallback: "Window"))
+        windowMenu.addItem(withTitle: Localization.current.text("menu.minimize", fallback: "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: Localization.current.text("common.close", fallback: "Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "")
         NSApp.windowsMenu = windowMenu
 
         for submenu in [appMenu, fileMenu, editMenu, windowMenu] {

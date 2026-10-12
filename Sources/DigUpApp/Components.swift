@@ -87,7 +87,7 @@ struct MomentBar: View {
             }
         }
         .frame(height: 4)
-        .accessibilityLabel("At \(ResultRow.clock(start)) of \(ResultRow.clock(duration))")
+        .accessibilityLabel(Localization.current.format("preview.timeline", fallback: "At %@ of %@", ResultRow.clock(start), ResultRow.clock(duration)))
     }
 }
 
@@ -131,17 +131,15 @@ private struct CompactLabel: LabelStyle {
 extension FileKind {
     /// "1 screenshot", "25 PDFs", "6 audio files"
     func counted(_ count: Int) -> String {
-        let one = count == 1
-        let noun = switch self {
-        case .screenshot: one ? "screenshot" : "screenshots"
-        case .image: one ? "image" : "images"
-        case .pdf: one ? "PDF" : "PDFs"
-        case .doc: one ? "document" : "documents"
-        case .audio: one ? "audio file" : "audio files"
-        case .video: one ? "video" : "videos"
-        case .code: one ? "code file" : "code files"
+        switch self {
+        case .screenshot: Localization.current.count("count.kind.screenshot", count, one: "%lld screenshot", other: "%lld screenshots")
+        case .image: Localization.current.count("count.kind.image", count, one: "%lld image", other: "%lld images")
+        case .pdf: Localization.current.count("count.kind.pdf", count, one: "%lld PDF", other: "%lld PDFs")
+        case .doc: Localization.current.count("count.kind.doc", count, one: "%lld document", other: "%lld documents")
+        case .audio: Localization.current.count("count.kind.audio", count, one: "%lld audio file", other: "%lld audio files")
+        case .video: Localization.current.count("count.kind.video", count, one: "%lld video", other: "%lld videos")
+        case .code: Localization.current.count("count.kind.code", count, one: "%lld code file", other: "%lld code files")
         }
-        return "\(count.formatted()) \(noun)"
     }
 }
 
@@ -194,11 +192,11 @@ struct ShortcutRecorder: View {
             Button { setRecording(!recording) } label: {
                 Group {
                     if recording {
-                        Text("Press the new shortcut…").foregroundStyle(.secondary)
+                        Text(Localization.current.text("shortcut.press", fallback: "Press the new shortcut…")).foregroundStyle(.secondary)
                     } else if let combo {
                         Keycaps(caps: combo.caps, size: capSize)
                     } else {
-                        Text("Click to set a shortcut").foregroundStyle(.secondary)
+                        Text(Localization.current.text("shortcut.clickSet", fallback: "Click to set a shortcut")).foregroundStyle(.secondary)
                     }
                 }
                 .font(.system(size: 13))
@@ -213,8 +211,8 @@ struct ShortcutRecorder: View {
             }
             .buttonStyle(.plain)
             .background(KeyCatcher(active: recording, onKey: handle, onResign: { setRecording(false) }))
-            .accessibilityLabel(recording ? "Recording a new shortcut" : "Shortcut \(combo?.display ?? "none"), click to change")
-            Text(problem ?? (recording ? "Esc cancels" : "Click to change"))
+            .accessibilityLabel(recording ? Localization.current.text("shortcut.recording", fallback: "Recording a new shortcut") : Localization.current.format("shortcut.accessibility", fallback: "Shortcut %@, click to change", combo?.display ?? Localization.current.text("shortcut.none", fallback: "none")))
+            Text(problem ?? (recording ? Localization.current.text("shortcut.escape", fallback: "Esc cancels") : Localization.current.text("shortcut.clickChange", fallback: "Click to change")))
                 .font(.system(size: 11))
                 .foregroundStyle(problem == nil ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.red))
                 .multilineTextAlignment(.center)
@@ -234,7 +232,7 @@ struct ShortcutRecorder: View {
                                                                                                .numericPad])
         if event.keyCode == 53, flags.isEmpty { return setRecording(false) }   // Esc
         guard let combo = KeyCombo(keyCode: event.keyCode, flags: flags) else {
-            problem = "Use ⌘, ⌥ or ⌃ with a key"
+            problem = Localization.current.text("shortcut.modifier", fallback: "Use ⌘, ⌥ or ⌃ with a key")
             return
         }
         if let why = apply(combo) {

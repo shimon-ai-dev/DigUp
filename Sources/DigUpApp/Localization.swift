@@ -48,6 +48,18 @@ nonisolated struct Localization: Sendable {
         self.count("count.results", count, one: "%lld result", other: "%lld results")
     }
 
+    func filesCount(_ value: Int) -> String {
+        count("count.files", value, one: "%lld file", other: "%lld files")
+    }
+    func weakerCount(_ value: Int) -> String {
+        count("count.weaker", value, one: "%lld weaker match", other: "%lld weaker matches")
+    }
+    func resultsSummary(_ strong: Int, weaker: Int, code: Bool = false) -> String {
+        let total = resultsCount(strong)
+        let scope = code ? format("search.results.code", fallback: "%@ in your code", total) : total
+        return weaker > 0 ? format("search.results.withWeaker", fallback: "%@ · %@", scope, weakerCount(weaker)) : scope
+    }
+
     static let resourceBundleName = AppLocalizationResources.bundleName
     static func resourceBundle(appBundle: Bundle) throws -> Bundle {
         if appBundle.bundleURL.pathExtension == "app" {
