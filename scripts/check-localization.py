@@ -20,7 +20,7 @@ def table(path):
         out[k]=v;pos=m.end()
     return out
 
-def validate(root):
+def validate(root, required_keys=()):
     tables={}; plurals={}
     for lang in ['en','zh-Hans']:
         d=root/(lang+'.lproj');tables[lang]=table(d/'Localizable.strings')
@@ -35,6 +35,8 @@ def validate(root):
                 if lang=='en' and 'one' not in var: raise ValueError(f'{key}: missing English one')
     if tables['en'].keys()!=tables['zh-Hans'].keys():raise ValueError('English/Chinese key sets differ')
     if plurals['en'].keys()!=plurals['zh-Hans'].keys():raise ValueError('Plural key sets differ')
+    missing=set(required_keys)-tables['en'].keys()-plurals['en'].keys()
+    if missing: raise ValueError('Required UI keys missing: '+', '.join(sorted(missing)))
     for k,v in tables['en'].items():
         if placeholders(v)!=placeholders(tables['zh-Hans'][k]):raise ValueError(f'{k}: placeholders differ')
     for k,v in plurals['en'].items():
@@ -46,7 +48,13 @@ def validate(root):
                     if form in entry and placeholders(entry[form])!=[(1,'lld')]:raise ValueError(f'{k}.{lang}.{form}: count placeholder required')
     return len(tables['en']),len(plurals['en'])
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--resources',type=Path,default=Path(__file__).resolve().parents[1]/'Sources/DigUpLocalizationResources/Resources');a=p.parse_args()
+    default=Path(__file__).resolve().parents[1]/'Sources/DigUpLocalizationResources/Resources'
+    p=argparse.ArgumentParser()
+    p.add_argument('--resources',type=Path,default=default)
+    p.add_argument('--required-keys',type=Path)
+    a=p.parse_args()
     try:
-        n,m=validate(a.resources);print(f'Localization OK: {n} text keys, {m} plural keys per language')
+        manifest=a.required_keys or (Path(__file__).with_name('ui-localization-required-keys.json') if a.resources==default else None)
+        required=json.loads(manifest.read_text()) if manifest and manifest.exists() else []
+        n,m=validate(a.resources,required);print(f'Localization OK: {n} text keys, {m} plural keys per language; {len(required)} reviewed UI keys')
     except (ValueError,OSError,KeyError) as e:p.exit(1,f'Localization FAILED: {e}\n')

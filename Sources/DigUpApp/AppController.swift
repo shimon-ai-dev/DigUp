@@ -184,14 +184,14 @@ final class AppController {
     }
 
     /// Asks for folders with the standard open panel (as a sheet when there's a window).
-    func pickFolders(for window: NSWindow?, prompt: String = "Add", then done: @escaping ([URL]) -> Void) {
+    func pickFolders(for window: NSWindow?, prompt: String = Localization.current.text("common.add", fallback: "Add"), then done: @escaping ([URL]) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         panel.canCreateDirectories = false
         panel.prompt = prompt
-        panel.message = "Choose folders for DigUp to search."
+        panel.message = Localization.current.text("folders.picker.message", fallback: "Choose folders for DigUp to search.")
         let finish = { (response: NSApplication.ModalResponse) in
             done(response == .OK ? panel.urls.map { AppSettings.folderURL($0.path) } : [])
         }
