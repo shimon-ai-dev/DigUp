@@ -1,8 +1,9 @@
+@preconcurrency import AVFoundation
 import Foundation
 import Testing
 @testable import DigUpKit
 
-@Suite final class MediaEmbeddingFailureTests {
+@Suite(.serialized) final class MediaEmbeddingFailureTests {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent("DigUpTest-media-errors-\(UUID().uuidString)")
     deinit { try? FileManager.default.removeItem(at: folder) }
 
@@ -63,6 +64,83 @@ import Testing
         #expect(try indexer.sync([files]).queued.isEmpty)
         #expect(try indexer.run().isEmpty)
         #expect(try store.counts().vectors == 0)
+    }
+
+    @Test func videoFrameFailureKeepsSoundAndRetriesOnlyMissingFrames() async throws {
+        let embedder = MediaFailureEmbedder()
+        let (store, indexer, files) = try setup(embedder)
+        let movie = files.appendingPathComponent("public-synthetic-video.mov")
+        try await makeMovie(to: movie, sound: files.appendingPathComponent("public-synthetic-tone.wav"))
+        try FileManager.default.removeItem(at: files.appendingPathComponent("public-synthetic-tone.wav"))
+        _ = try indexer.sync([files])
+        embedder.reply = { paths in paths.enumerated().map { n, path in
+            path.hasSuffix(".jpg") && n == 0 ? Embedding(vector: nil, error: "synthetic frame decoder context")
+                : Embedding(vector: FakeEmbedder.vector(for: path), error: nil)
+        } }
+        #expect(try indexer.run()["failed"] == 1)
+        var audio = 0, frames = 0
+        try store.db.query("SELECT kind, COUNT(*) FROM segments WHERE vec IS NOT NULL GROUP BY kind") {
+            if $0.text(0) == "audio" { audio = Int($0.int(1)) }; if $0.text(0) == "frame" { frames = Int($0.int(1)) }
+        }
+        #expect(audio == 3)
+        var detail: String?
+        try store.db.query("SELECT detail FROM files") { detail = $0.text(0) }
+        #expect(detail?.contains("synthetic frame decoder context") == true)
+        #expect(try indexer.sync([files]).queued.count == 1)
+        embedder.reply = { $0.map { _ in Embedding(vector: FakeEmbedder.vector(for: "recovered frame"), error: nil) } }
+        #expect(try indexer.run()["done"] == 1)
+        #expect(try store.counts().vectors == audio + frames + 1)
+        #expect(embedder.batchSizes.filter { $0 > 0 } == [3])
+    }
+
+    func makeMovie(to movie: URL, sound: URL) async throws {
+        let silent = folder.appendingPathComponent("silent.mov")
+        let writer = try AVAssetWriter(outputURL: silent, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 320,
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
+            kCVPixelBufferWidthKey as String: 320, kCVPixelBufferHeightKey as String: 320,
+        ])
+        writer.add(input); #expect(writer.startWriting()); writer.startSession(atSourceTime: .zero)
+        for n in 0...6 {
+            while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(10)) }
+            var buffer: CVPixelBuffer?
+            #expect(CVPixelBufferCreate(kCFAllocatorDefault, 320, 320, kCVPixelFormatType_32ARGB, nil, &buffer) == kCVReturnSuccess)
+            let pixels = try #require(buffer)
+            CVPixelBufferLockBaseAddress(pixels, [])
+            let base = try #require(CVPixelBufferGetBaseAddress(pixels)).assumingMemoryBound(to: UInt8.self)
+            let stride = CVPixelBufferGetBytesPerRow(pixels)
+            for y in 0..<320 { for x in 0..<320 {
+                let i = y * stride + x * 4
+                base[i] = 255; base[i + 1] = y < 160 ? 255 : 0
+                base[i + 2] = x < 160 ? 255 : 0; base[i + 3] = n % 2 == 0 ? 40 : 220
+            } }
+            CVPixelBufferUnlockBaseAddress(pixels, [])
+            #expect(adaptor.append(pixels, withPresentationTime: CMTime(seconds: Double(n), preferredTimescale: 600)))
+        }
+        input.markAsFinished(); await writer.finishWriting()
+        #expect(writer.status == .completed)
+        let composition = AVMutableComposition()
+        let videoAsset = AVURLAsset(url: silent), audioAsset = AVURLAsset(url: sound)
+        let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 6, preferredTimescale: 600))
+        let videoTracks = try await videoAsset.loadTracks(withMediaType: .video)
+        let audioTracks = try await audioAsset.loadTracks(withMediaType: .audio)
+        let videoTrack = try #require(videoTracks.first)
+        let audioTrack = try #require(audioTracks.first)
+        try composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)?
+            .insertTimeRange(range, of: videoTrack, at: .zero)
+        try composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)?
+            .insertTimeRange(range, of: audioTrack, at: .zero)
+        let exporter = try #require(AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough))
+        if #available(macOS 15, *) {
+            try await exporter.export(to: movie, as: .mov)
+        } else {
+            exporter.outputURL = movie; exporter.outputFileType = .mov
+            await exporter.export()
+            #expect(exporter.status == .completed)
+        }
     }
 
     @Test func errorWithVectorAndMalformedVectorCannotBeMarkedDone() throws {

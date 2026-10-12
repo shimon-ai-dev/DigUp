@@ -69,6 +69,18 @@ import Testing
         #expect(try Searcher(store: store).search("unrelated lunar geology", queryVector: query).isEmpty)
     }
 
+    @Test func recoveryIsCappedAndExplicitGateStillControlsDiagnostics() throws {
+        let store = try IndexStore(directory: folder)
+        for n in 1...12 { try add(store, n, cosine: n <= 4 ? 0.73 - Float(n) / 200 : 0.4) }
+        let searcher = try Searcher(store: store)
+        let hits = try searcher.search("groceries for breakfast", queryVector: query)
+        #expect(hits.count == 3)
+        #expect(Searcher.strongCount(hits) == 0)
+        #expect(try searcher.search("", queryVector: query).isEmpty)
+        #expect(try searcher.search("groceries for breakfast", queryVector: query, zGate: 1_000_000).isEmpty)
+        #expect(try searcher.search("groceries for breakfast", queryVector: query, limit: 1).count == 1)
+    }
+
     @Test func invalidStoredVectorDoesNotPoisonValidMedia() throws {
         let store = try IndexStore(directory: folder)
         for n in 1...4 { try add(store, n, cosine: n == 1 ? 0.78 : 0.4) }
