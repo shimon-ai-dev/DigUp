@@ -847,6 +847,10 @@ nonisolated final class Engine: @unchecked Sendable {
                             if summary.failedDetails.count < 8 {
                                 var detail: String?
                                 try? store?.db.query("SELECT detail FROM files WHERE id = ?", [.int(file.id)]) { detail = $0.text(0) }
+                                if let info = try? store?.info(of: file.id), info["media_legacy_incomplete"] == "1" {
+                                    detail = Localization.current.text("settings.index.legacyMedia",
+                                        fallback: "Earlier-version media index is incomplete. Retry failed media to fill missing parts; successful parts are kept.")
+                                }
                                 summary.failedDetails.append("\((file.path as NSString).lastPathComponent): \(detail ?? "")")
                             }
                         default: summary.skipped += 1

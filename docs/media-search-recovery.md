@@ -50,12 +50,23 @@ original error plus the media location. One retry is allowed on the next sync fo
 subsequent automatic syncs do not loop forever. Retrying reuses successful locations and adds only missing segments.
 An explicit retry can be requested from Settings or with the developer CLI's --retry-failed option.
 
+Unchanged legacy audio/video incorrectly marked done is checked for deterministic signs: nil or wrong-sized
+audio/frame vectors, done audio with no audio rows (unless an explicit zero count was stored), and missing rows
+against declared frame/sound-window counts. These become visible failures without starting automatic repair.
+Settings shows a localized earlier-version explanation; explicitly choosing Retry fills only missing locations and
+keeps successful segments. The reconciliation is idempotent, applies only to connected selected folders, and does
+not run on the code index or original DigUp data. Healthy media and explicitly skipped/zero-count silent media are
+left alone. Audio duration is never used to guess missing windows because silence/short tails may be omitted.
+
 ## Limits
 
 The cosine and contrast gates are empirical safeguards. No-match controls cover a small public corpus, not every
 possible irrelevant query or user library. A lower-confidence suggestion can still be wrong. Chinese queries about
 English speech and Chinese spoken-content retrieval are different tests; results from the former do not validate the
 latter. The original Chinese-spoken-content probe had only one audio candidate and does not establish discrimination.
+Partial legacy audio with some valid rows but no stored expected-window count may be indistinguishable from omitted
+silence. The old encoder error cannot be recovered if the previous version never stored it; the repair records the
+missing-vector/count evidence rather than inventing an error. No full index rebuild is required for diagnosed cases.
 
 Full reference-vector tests check compatibility with fixed input vectors, not semantic quality. The original reference
 speech fixture is synthetic speech-like audio. The app remains ad-hoc signed, unnotarized and isolated as DigUpTest;

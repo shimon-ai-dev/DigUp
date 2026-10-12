@@ -117,5 +117,6 @@
   "search.suggestions.noStrong",
   "search.suggestions.explain",
   "settings.index.retryFailed",
-  "settings.index.retryDetail"
+  "settings.index.retryDetail",
+  "settings.index.legacyMedia"
 ]

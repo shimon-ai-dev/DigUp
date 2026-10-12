@@ -361,3 +361,4 @@
 "search.suggestions.explain" = "这些媒体候选低于通常的相关性门槛，可能与查询无关。按回车键显示或收起。";
 "settings.index.retryFailed" = "重试失败的媒体";
 "settings.index.retryDetail" = "重试所有已连接的所选文件夹中失败的媒体，保留已成功处理的音频片段和视频帧。";
+"settings.index.legacyMedia" = "旧版媒体索引不完整。请重试失败的媒体以补齐缺失部分；已成功处理的片段会保留。";

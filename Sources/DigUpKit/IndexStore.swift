@@ -318,13 +318,60 @@ public final class IndexStore {
         try finish(id, state: "pending", info: info)
     }
 
+    /// Older audio/video indexing marked partial or nil embedding replies done. Only reconcile evidence retained
+    /// in SQLite: missing/malformed media vectors, no audio rows, or a shortfall against stored extraction counts.
+    /// Duration cannot establish missing audio windows, because silence and short tails are intentionally skipped.
+    func reconcileLegacyMedia(_ file: FileRecord) throws {
+        guard self.file.lastPathComponent != Self.codeFile, file.state == "done",
+              file.kind == .audio || file.kind == .video else { return }
+        var info = try info(of: file.id)
+        var counts: [String: (rows: Int, missing: Int)] = [:]
+        try db.query("""
+            SELECT kind, COUNT(*), SUM(CASE WHEN vec IS NULL OR length(vec) != ? THEN 1 ELSE 0 END)
+            FROM segments WHERE file = ? AND kind IN ('audio','frame') GROUP BY kind
+            """, [.int(Int64(Vectors.dimension * MemoryLayout<Float16>.stride)), .int(file.id)]) {
+            counts[$0.text(0) ?? ""] = (Int($0.int(1)), Int($0.int(2)))
+        }
+        var problems: [String] = []
+        for kind in ["audio", "frame"] {
+            let count = counts[kind] ?? (0, 0)
+            if count.missing > 0 { problems.append("\(kind): \(count.missing) missing or malformed vectors") }
+            let key = kind == "audio" ? "sound_windows" : "frames"
+            if let expected = info[key].flatMap(Int.init), expected >= 0, count.rows - count.missing < expected {
+                problems.append("\(kind): expected \(expected), stored valid \(count.rows - count.missing)")
+            }
+        }
+        // A legacy done audio file passed the extractor's nonempty guard. An explicit zero count is left alone.
+        if file.kind == .audio, (counts["audio"]?.rows ?? 0) == 0, info["sound_windows"].flatMap(Int.init) != 0 {
+            problems.append("audio: no stored windows")
+        }
+        guard !problems.isEmpty else { return }
+        info["media_legacy_incomplete"] = "1"
+        info["media_encoding_failed"] = "1"
+        info["media_retry_count"] = "1"   // Inspection makes it visible; only an explicit retry may start repair.
+        info["media_error_count"] = "\(problems.count)"
+        var original: String?
+        try db.query("SELECT detail FROM files WHERE id = ?", [.int(file.id)]) { original = $0.text(0) }
+        let detail = "legacy media index incomplete: " + problems.joined(separator: "; ")
+            + "; original encoder error was not saved"
+            + (original.map { "; " + $0 } ?? "")
+        try finish(file.id, state: "failed", detail: detail, info: info)
+    }
+
     /// Explicit retry of failed media in the store's current connected-folder scope. Other files are left alone.
     @discardableResult public func retryFailedMedia() throws -> Int {
-        var ids: [Int64] = []
-        try db.query("SELECT id FROM files WHERE state = 'failed' AND kind IN ('audio','video','image','screenshot')\(scopeSQL)",
-                     scopeValues) { ids.append($0.int(0)) }
-        try db.transaction { for id in ids { try queueMediaRetry(id, automatic: false) } }
-        return ids.count
+        guard file.lastPathComponent != Self.codeFile else { return 0 }
+        return try db.transaction {
+            var legacy: [FileRecord] = []
+            try db.query("SELECT \(Self.fileColumns) FROM files WHERE state = 'done' AND kind IN ('audio','video')\(scopeSQL)",
+                         scopeValues) { legacy.append(Self.record($0)) }
+            for file in legacy { try reconcileLegacyMedia(file) }
+            var ids: [Int64] = []
+            try db.query("SELECT id FROM files WHERE state = 'failed' AND kind IN ('audio','video','image','screenshot')\(scopeSQL)",
+                         scopeValues) { ids.append($0.int(0)) }
+            for id in ids { try queueMediaRetry(id, automatic: false) }
+            return ids.count
+        }
     }
 
     /// Same inode, size and date at a new path: a move or rename. Only the path changes; nothing is re-embedded.

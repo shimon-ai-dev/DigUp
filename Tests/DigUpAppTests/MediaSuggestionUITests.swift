@@ -29,6 +29,7 @@ import Testing
             #expect(l.text("result.reason.suggestion", fallback: "__MISSING__") != "__MISSING__")
             #expect(l.text("search.suggestions.available", fallback: "__MISSING__") != "__MISSING__")
             #expect(l.text("settings.index.retryFailed", fallback: "__MISSING__") != "__MISSING__")
+            #expect(l.text("settings.index.legacyMedia", fallback: "__MISSING__") != "__MISSING__")
         }
     }
 }

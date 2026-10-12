@@ -104,6 +104,7 @@ public final class Indexer {
                         summary.queued.append(row.id)
                     } else {
                         summary.unchanged += 1
+                        if !options.code { try store.reconcileLegacyMedia(row) }
                         if row.state == "failed", [.audio, .video, .image, .screenshot].contains(row.kind) {
                             let info = try store.info(of: row.id)
                             if info["media_encoding_failed"] == "1", (Int(info["media_retry_count"] ?? "0") ?? 0) < 1 {

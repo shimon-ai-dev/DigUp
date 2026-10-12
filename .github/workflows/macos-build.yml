@@ -172,7 +172,7 @@ jobs:
             printf 'Sparkle: 2.10.0 (%s)\n' "$SPARKLE_REVISION"
             printf 'Signing: ad-hoc, no notarization. Exact pinned text and media models tested but not bundled.\n'
             printf 'Localization: English/Simplified Chinese unit/resource tests and relocated app resource/purpose smoke; GUI and actual system dialogs remain unverified.\n'
-            printf 'Tests: full native suite with both pinned models, real 4-clip/8-query audio replay, 12-query photo/screenshot/video/long-audio/Chinese-speech replay, six native no-match controls, mixed-modal search, media encoding-error/retry regressions, Chinese lexical/localized UI model checks and extracted-bundle smoke. No GUI or private-file validation.\n'
+            printf 'Tests: full native suite with both pinned models, real 4-clip/8-query audio replay, 12-query photo/screenshot/video/long-audio/Chinese-speech replay, six native no-match controls, mixed-modal search, media encoding-error/retry and legacy done-media reconciliation regressions, Chinese lexical/localized UI model checks and extracted-bundle smoke. No GUI or private-file validation.\n'
             cat "$RUNNER_TEMP/digup-toolchain.log"
           } > build.noindex/BUILD-INFO.txt
           archive="DigUpTest-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
