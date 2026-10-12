@@ -537,28 +537,41 @@ public final class Indexer {
         let wordPages = textPages.filter { SearchText.hasWords($0.text) }
         let imagePages = pages.filter { $0.imagePath != nil }
         let garbledPages = pages.filter { $0.garbled != nil }   // rendered too: among `imagePages`
-        var textVectors: [Int: [Float]] = [:]   // by page number
+        var textParts: [(page: Int, text: String)] = []
+        var textVectors: [Int: [Float]] = [:]   // by part, not page (a page can have several)
         var imageVectors: [Embedding] = []
+        var garbledParts: [(page: Int, text: String)] = []
         var garbledVectors: [[Float]] = []
         if !wordPages.isEmpty || !imagePages.isEmpty {
             let worker = try fullWorker()
-            let vectors = try worker.embedTexts(wordPages.map {
-                Prompts.document(title: title, text: String($0.text.prefix(4000)))
+            for page in textPages {
+                let parts = SearchText.hasWords(page.text)
+                    ? try worker.documentChunks(page.text, title: title) : [page.text]
+                textParts += parts.map { (page.number, $0) }
+            }
+            let worded = textParts.indices.filter { SearchText.hasWords(textParts[$0].text) }
+            let vectors = try worker.embedTexts(worded.map {
+                Prompts.document(title: title, text: textParts[$0].text)
             })
-            textVectors = Dictionary(uniqueKeysWithValues: zip(wordPages.map(\.number), vectors))
+            textVectors = Dictionary(uniqueKeysWithValues: zip(worded, vectors))
             imageVectors = try worker.embedImages(imagePages.compactMap(\.imagePath), budget: options.pageBudget)
-            garbledVectors = try worker.embedTexts(garbledPages.map {
-                Prompts.document(title: title, text: String($0.garbled!.prefix(4000)))
+            for page in garbledPages {
+                garbledParts += try worker.documentChunks(page.garbled!, title: title).map { (page.number, $0) }
+            }
+            garbledVectors = try worker.embedTexts(garbledParts.map {
+                Prompts.document(title: title, text: $0.text)
             })
+        } else {
+            textParts = textPages.map { ($0.number, $0.text) }
         }
         try store.db.transaction {
             // Meaning only: the garbled words are never shown or matched against what you type.
-            for (page, vector) in zip(garbledPages, garbledVectors) {
-                try store.addSegment(file: file.id, kind: .page, modality: .text, loc: Double(page.number), vector: vector)
+            for (part, vector) in zip(garbledParts, garbledVectors) {
+                try store.addSegment(file: file.id, kind: .page, modality: .text, loc: Double(part.page), vector: vector)
             }
-            for page in textPages {
-                try store.addSegment(file: file.id, kind: .page, modality: .text, loc: Double(page.number),
-                                     excerpt: excerpt(page.text), text: page.text, vector: textVectors[page.number])
+            for (index, part) in textParts.enumerated() {
+                try store.addSegment(file: file.id, kind: .page, modality: .text, loc: Double(part.page),
+                                     excerpt: excerpt(part.text), text: part.text, vector: textVectors[index])
             }
             for (page, embedding) in zip(imagePages, imageVectors) {
                 try store.addSegment(file: file.id, kind: .pageImage, modality: .image, loc: Double(page.number),
@@ -588,18 +601,24 @@ public final class Indexer {
         }
         let title = URL(fileURLWithPath: file.path).deletingPathExtension().lastPathComponent
         // Text that's mostly digits (a data dump saved as .txt) gets keyword search only.
-        let worded = chunks.indices.filter { SearchText.hasWords(chunks[$0]) }
-        let vectors = worded.isEmpty ? [] : try fullWorker().embedTexts(worded.map {
-            Prompts.document(title: title, text: chunks[$0])
+        let worker = chunks.contains(where: SearchText.hasWords) ? try fullWorker() : nil
+        var parts: [(offset: Int, text: String)] = []
+        for (offset, chunk) in chunks.enumerated() {
+            let split = SearchText.hasWords(chunk) ? try worker!.documentChunks(chunk, title: title) : [chunk]
+            parts += split.map { (offset, $0) }
+        }
+        let worded = parts.indices.filter { SearchText.hasWords(parts[$0].text) }
+        let vectors = worded.isEmpty ? [] : try worker!.embedTexts(worded.map {
+            Prompts.document(title: title, text: parts[$0].text)
         })
         let vector = Dictionary(uniqueKeysWithValues: zip(worded, vectors))
         let end = min(total, options.maxChunks)
         let unread = read.upperBound < end
         try store.db.transaction {
-            for (offset, chunk) in chunks.enumerated() {
+            for (index, part) in parts.enumerated() {
                 try store.addSegment(file: file.id, kind: .chunk, modality: .text,
-                                     loc: Double(read.lowerBound + offset + 1), excerpt: excerpt(chunk), text: chunk,
-                                     vector: vector[offset])
+                                     loc: Double(read.lowerBound + part.offset + 1), excerpt: excerpt(part.text), text: part.text,
+                                     vector: vector[index])
             }
             var info = ["chunks": "\(end)", "chars": "\(characters)"]
             info["read_to"] = unread ? "\(read.upperBound)" : nil
@@ -610,7 +629,7 @@ public final class Indexer {
         let span = later ? "chunks \(read.lowerBound + 1)–\(read.upperBound) of \(end)"
             : unread ? "\(chunks.count) of \(end) chunks" : "\(chunks.count) chunks"
         return (unread ? "partial" : "done",
-                span + (worded.count < chunks.count ? ", \(chunks.count - worded.count) for keywords only" : ""))
+                span + (worded.count < parts.count ? ", \(parts.count - worded.count) for keywords only" : ""))
     }
 
     /// A code file's stretches of lines (a notebook's of cells), each embedded with the file's path in its repo as its

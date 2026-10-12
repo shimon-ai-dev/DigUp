@@ -153,7 +153,8 @@ public final class IndexStore {
             try db.run("INSERT INTO fts_new(rowid, name, body, original) VALUES(?, ?, ?, ?)",
                        [.int(row.int(0)), .text(SearchText.indexed(name))] + Self.keywordText(body))
             // Old long passages can contain truncated vectors or obsolete overlap.
-            if ["doc", "pdf"].contains(row.text(4) ?? ""), text.count >= 1800,
+            if ["doc", "pdf"].contains(row.text(4) ?? ""),
+               text.count >= 1800 || text.utf8.count + Self.nameText(path).utf8.count + 32 > 2048,
                ["page", "page_image", "chunk"].contains(row.text(2) ?? "") {
                 reread.insert(row.int(1))
             }
@@ -162,6 +163,13 @@ public final class IndexStore {
             try db.run("INSERT INTO filename_fts(rowid, name) VALUES(?, ?)",
                        [.int(row.int(0)), .text(SearchText.normalized(Self.nameText(row.text(1) ?? "")).lowercased())])
         }
+        // Garbled text vectors have no keyword row, so their original length is
+        // unavailable: re-extract those pages rather than retaining an old cut.
+        try db.query("""
+            SELECT DISTINCT s.file FROM segments s JOIN files f ON f.id = s.file
+            LEFT JOIN fts ON fts.rowid = s.id
+            WHERE f.kind = 'pdf' AND s.kind = 'page' AND s.vec IS NOT NULL AND fts.rowid IS NULL
+            """) { reread.insert($0.int(0)) }
         try db.execute("DROP TABLE fts; ALTER TABLE fts_new RENAME TO fts; PRAGMA user_version = 6;")
         for file in reread { try requeue(file) }
     }
