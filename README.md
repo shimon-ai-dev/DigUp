@@ -131,7 +131,7 @@ macros the build needs.
 ```sh
 git clone https://github.com/ARahim3/DigUp && cd DigUp
 scripts/build-llama.sh            # llama.cpp at a pinned tag, with a one-line patch (a few minutes)
-swift build -c release && swift test
+swift build -c release && swift test --no-parallel
 ./build.sh                        # → build.noindex/DigUp.app
 ```
 

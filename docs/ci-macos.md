@@ -10,7 +10,11 @@ This fork's `macOS ad-hoc build` workflow creates an Apple Silicon testing packa
 - Checkout v7.0.1 and upload-artifact v7.0.2, both pinned to full commit hashes. Recursive submodule checkout is enabled; the current source has no submodules.
 - CMake is taken from the runner image, checked before building, and its version is recorded. The runner image itself is maintained by GitHub rather than frozen by this workflow.
 
-The workflow builds llama.cpp and the native CLI, runs release-guard checks and `swift test --jobs 2` (including the actual app estimate-helper launch), and invokes the existing `./build.sh` with `SIGN_ID=-` and `RELEASE=0`. It does not invoke `scripts/release.sh`, notarize, create a GitHub Release, update an appcast, or publish to Homebrew. The inherited Homebrew workflow is restricted to the upstream repository and skips in this fork.
+The workflow builds llama.cpp and the native CLI, runs release-guard checks and `swift test --jobs 2 --no-parallel` (including the actual app estimate-helper launch), and invokes the existing `./build.sh` with `SIGN_ID=-` and `RELEASE=0`. It does not invoke `scripts/release.sh`, notarize, create a GitHub Release, update an appcast, or publish to Homebrew. The inherited Homebrew workflow is restricted to the upstream repository and skips in this fork.
+
+The complete suite runs serially because the AVFoundation extraction bridge blocks until its asynchronous work
+finishes. Concurrent blocking suites plus native model tests can starve Swift Testing's cooperative executor;
+per-suite serialization alone does not prevent different suites overlapping. No tests are excluded by this flag.
 
 ## Contents and validation
 

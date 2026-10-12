@@ -113,12 +113,13 @@ jobs:
           export DIGUP_TEST_HELPER="$(swift build --show-bin-path)/digup"
           test -x "$DIGUP_TEST_HELPER"
           python3 -u scripts/run-bounded-tests.py --seconds 300 --log "$RUNNER_TEMP/digup-legacy-media-test.log" \
-            swift test --jobs 2 --filter LegacyMediaRecoveryTests
+            swift test --jobs 2 --no-parallel --filter LegacyMediaRecoveryTests
           # Run the blocking AVFoundation regressions in their own process, then the complete suite.
           python3 -u scripts/run-bounded-tests.py --seconds 300 --log "$RUNNER_TEMP/digup-media-focused-test.log" \
-            swift test --jobs 2 --filter MediaEmbeddingFailureTests
+            swift test --jobs 2 --no-parallel --filter MediaEmbeddingFailureTests
+          # Blocking AVFoundation bridges must not occupy all Swift Testing cooperative executor threads.
           python3 -u scripts/run-bounded-tests.py --seconds 480 --log "$RUNNER_TEMP/digup-swift-test.log" \
-            swift test --jobs 2
+            swift test --jobs 2 --no-parallel
           test "$(grep -c 'MEDIA_RECOVERY_NEGATIVE ' "$RUNNER_TEMP/digup-swift-test.log")" -eq 6
           test "$(grep -c 'MEDIA_MULTIMODAL_REPLAY ' "$RUNNER_TEMP/digup-swift-test.log")" -eq 12
           grep -q 'MEDIA_RECOVERY_CLI_JSON real helper:' "$RUNNER_TEMP/digup-swift-test.log"
