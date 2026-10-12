@@ -17,4 +17,18 @@ import Testing
         #expect(AppIdentity.helperName == "digup-test")
         #expect(!AppIdentity.updatesEnabled)
     }
+    @Test func temporaryDirectoriesAndSafeAliasesRemainUsable() throws {
+        let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let target = temporary.appendingPathComponent("safe-index")
+        let link = temporary.appendingPathComponent("safe-index-link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        print("Data-path regression: temporary=\(temporary.path), standardized=\(temporary.standardizedFileURL.path), resolved=\(temporary.resolvingSymlinksInPath().path)")
+        #expect(!AppIdentity.isOriginalDataDirectory(temporary))
+        #expect(!AppIdentity.isOriginalDataDirectory(target))
+        #expect(!AppIdentity.isOriginalDataDirectory(link))
+        _ = try IndexStore(directory: link)
+        #expect(FileManager.default.fileExists(atPath: target.appendingPathComponent(IndexStore.mainFile).path))
+    }
 }
