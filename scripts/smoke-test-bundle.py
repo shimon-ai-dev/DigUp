@@ -228,7 +228,11 @@ def main():
         for block in iter(lambda: source.read(8 * 1024 * 1024), b""):
             digest.update(block)
     require(digest.hexdigest() == TEXT_SHA256, "text model does not match pinned public SHA-256")
-    with tempfile.TemporaryDirectory(prefix="digup-bundle-smoke-") as directory:
+    # Ordinary source roots avoid the inherited /var versus /private/var scope
+    # mismatch. Scratch-cleanup coverage still probes Foundation's actual temp dir.
+    fixtures_parent = Path.home() / "Library/Caches"
+    fixtures_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="digup-bundle-smoke-", dir=fixtures_parent) as directory:
         scratch = Path(directory).resolve()
         fixtures, code, empty_models, index = [scratch / name for name in ("fixtures", "code", "models", "index")]
         for folder in (fixtures / "excluded", code / "excluded", empty_models):

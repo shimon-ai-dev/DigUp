@@ -19,3 +19,7 @@ CI verifies ad-hoc signatures before and after archive extraction, compares entr
 ## Still requires explicit desktop acceptance
 
 No full GUI onboarding, Gatekeeper first-open flow, macOS privacy prompts, hotkeys, login items, full media-backed indexing, or real user corpus has been tested. The media model is absent in CI, so ReferenceVectorTests remains skipped. Synthetic keyword results and limited text inference are not evidence of improved semantic-search quality. The package is ad-hoc signed and not notarized.
+
+### Known source-root path limitation
+
+The inherited index-service scope uses a chosen root's spelling while the crawler can return its physical spelling. Under macOS `/var` versus `/private/var`, this can produce empty scoped counts. Source-root normalization is not changed in this batch. CI and the manual instructions therefore place synthetic source fixtures in an ordinary `~/Library/Caches` directory; the scratch-isolation test still uses Foundation's actual temporary directory. Do not treat these checks as validation of every source-root alias.

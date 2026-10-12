@@ -44,7 +44,7 @@ CI downloads the pinned 310 MB public text model into a temporary folder and ver
 This edition defaults to `~/Library/Application Support/DigUpTest`, uses a dedicated defaults suite and helper identity, refuses original DigUp index paths, and blocks updates in code. Keep this copy in the extracted directory; explicit scratch paths are still convenient for disposable regression runs. Use only synthetic fixtures you created for testing, and do not select personal folders in onboarding or Settings. From the directory containing `package/DigUpTest.app`:
 
 ```sh
-scratch="$(mktemp -d /tmp/digup-ci.XXXXXX)"
+scratch="$(mktemp -d "$HOME/Library/Caches/digup-ci.XXXXXX")"
 mkdir -p "$scratch/fixtures" "$scratch/index" "$scratch/models"
 printf 'A synthetic trip note: take the train to the beach.\n' > "$scratch/fixtures/trip.txt"
 open -n "$PWD/package/DigUpTest.app" --args \
