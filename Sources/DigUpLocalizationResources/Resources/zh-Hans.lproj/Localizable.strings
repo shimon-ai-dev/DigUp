@@ -221,7 +221,7 @@
 "search.chooseFolders.title" = "选择要搜索的文件夹";
 "search.clear" = "清除";
 "search.code.active" = "正在搜索代码";
-"search.code.incomplete" = "仍在读取代码（%lld%%）：部分内容尚未加入";
+"search.code.incomplete" = "仍在读取代码（%@）：部分内容尚未加入";
 "search.code.off" = "代码搜索未开启";
 "search.copied" = "已复制 %@";
 "search.empty.code" = "代码中没有合适的结果";

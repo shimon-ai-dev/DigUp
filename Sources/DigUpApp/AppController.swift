@@ -245,7 +245,7 @@ final class AppController {
             return nil
         } catch {
             log("login item: \(error)")
-            Localization.current.format("error.login", fallback: "Cannot change login startup: %@", error.localizedDescription)
+            return Localization.current.format("error.login", fallback: "Cannot change login startup: %@", error.localizedDescription)
         }
     }
 

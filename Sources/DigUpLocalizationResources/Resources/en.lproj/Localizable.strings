@@ -221,7 +221,7 @@
 "search.chooseFolders.title" = "Choose folders to search";
 "search.clear" = "Clear";
 "search.code.active" = "Searching your code";
-"search.code.incomplete" = "Still reading code (%lld%%): some isn't in yet";
+"search.code.incomplete" = "Still reading code (%@): some isn't in yet";
 "search.code.off" = "Code search is off";
 "search.copied" = "Copied %@";
 "search.empty.code" = "No good matches in your code";

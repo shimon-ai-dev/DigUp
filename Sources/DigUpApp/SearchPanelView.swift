@@ -141,7 +141,7 @@ struct SearchPanelView: View {
             return controller.phase == .codeOff ? Localization.current.text("search.code.off", fallback: "Code search is off") : Localization.current.text("search.code.active", fallback: "Searching your code")
         case .meaning, .empty:
             if controller.isCode, let indexing = controller.model.status.code.indexing, indexing.total > 0 {
-                return Localization.current.format("search.code.incomplete", fallback: "Still reading code (%lld%%): some isn't in yet", Int64(Double(indexing.done) / Double(indexing.total) * 100))
+                return Localization.current.format("search.code.incomplete", fallback: "Still reading code (%@): some isn't in yet", Localization.current.percent(Double(indexing.done) / Double(indexing.total)))
             }
             if !controller.isCode, let caveat = controller.model.resultsCaveat { return caveat }
             let count = controller.results.strongRows.count
