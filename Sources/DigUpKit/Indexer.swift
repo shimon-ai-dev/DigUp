@@ -639,14 +639,35 @@ public final class Indexer {
             try store.finish(file.id, state: "skipped", detail: "no code")
             return ("skipped", "no code")
         }
-        // Lines that are mostly numbers and symbols (a table of constants) get keyword search only.
-        let worded = code.pieces.indices.filter { SearchText.hasWords(code.pieces[$0].text) }
-        let vectors = worded.isEmpty ? [] : try fullWorker().embedTexts(worded.map {
-            Prompts.document(title: code.title, text: code.pieces[$0].text)
+        // Keep the extractor's coarse code boundaries, then apply the complete
+        // prompt's real token budget. Preserve source offsets through this split.
+        let worker = code.pieces.contains { SearchText.hasWords($0.text) } ? try fullWorker() : nil
+        var pieces: [CodeExtractor.Piece] = []
+        for piece in code.pieces {
+            guard SearchText.hasWords(piece.text), let worker else {
+                pieces.append(piece)
+                continue
+            }
+            let ranges = try TextBudget.ranges(piece.text, title: code.title, limit: worker.textTokenLimit,
+                                               count: worker.textTokenCount)
+            for range in ranges {
+                let text = String(piece.text[range])
+                var first = piece.first, last = piece.last
+                if code.cells == nil {
+                    first += piece.text[..<range.lowerBound].filter { $0 == "\n" || $0 == "\r\n" }.count
+                    last = first + text.dropLast().filter { $0 == "\n" || $0 == "\r\n" }.count
+                }
+                pieces.append(CodeExtractor.Piece(text: text, first: first, last: last))
+            }
+        }
+        // Lines that are mostly numbers and symbols get keyword search only.
+        let worded = pieces.indices.filter { SearchText.hasWords(pieces[$0].text) }
+        let vectors = worded.isEmpty ? [] : try worker!.embedTexts(worded.map {
+            Prompts.document(title: code.title, text: pieces[$0].text)
         })
         let vector = Dictionary(uniqueKeysWithValues: zip(worded, vectors))
         try store.db.transaction {
-            for (offset, piece) in code.pieces.enumerated() {
+            for (offset, piece) in pieces.enumerated() {
                 try store.addSegment(file: file.id, kind: code.cells == nil ? .lines : .cells, modality: .text,
                                      loc: Double(piece.first), locEnd: Double(piece.last),
                                      excerpt: CodeExtractor.summary(piece.text), text: piece.text, vector: vector[offset])
@@ -656,8 +677,8 @@ public final class Indexer {
             info["repo"] = code.repo
             try store.finish(file.id, state: "done", info: info)
         }
-        return ("done", "\(code.pieces.count) stretches, \(code.cells.map { "\($0) cells" } ?? "\(code.lines) lines")"
-                + (worded.count < code.pieces.count ? ", \(code.pieces.count - worded.count) for keywords only" : ""))
+        return ("done", "\(pieces.count) stretches, \(code.cells.map { "\($0) cells" } ?? "\(code.lines) lines")"
+                + (worded.count < pieces.count ? ", \(pieces.count - worded.count) for keywords only" : ""))
     }
 
     private func audio(_ file: FileRecord, pieces: [MediaPiece], duration: Double) throws -> (String, String?) {
