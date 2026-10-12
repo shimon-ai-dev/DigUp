@@ -3,7 +3,7 @@ import Foundation
 
 /// What to index, where the index and the model live, and the hotkey.
 ///
-/// Saved in the app's defaults domain (com.abdurrahim.DigUp). Launch arguments override any of it without being
+/// Saved in the test edition's dedicated defaults domain. Launch arguments override any of it without being
 /// saved, which is how tests point the app at the testbed and never at real folders:
 ///
 ///     DigUp.app/Contents/MacOS/DigUp -roots ~/DigUpTestbed/real -indexDir <repo>/.dev/app-index \
@@ -39,9 +39,8 @@ nonisolated struct AppSettings: Sendable {
     /// The code index catches up once the code folders have been quiet this long (`-codeQuietSeconds`, default 60).
     var codeQuietSeconds: Double
 
-    static let supportDirectory = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/DigUp")
-    static let defaultIndexDirectory = supportDirectory.appendingPathComponent("index.noindex")
+    static let supportDirectory = AppIdentity.supportDirectory
+    static let defaultIndexDirectory = AppIdentity.indexDirectory
     static let defaultHotkey = "cmd+shift+space"
 
     /// The battery switch, in onboarding and Settings.
@@ -50,21 +49,26 @@ nonisolated struct AppSettings: Sendable {
 
     /// Where settings are saved. Reads see launch arguments first either way. (UserDefaults is thread-safe.)
     nonisolated(unsafe) static let defaults: UserDefaults = {
-        guard let suite = UserDefaults.standard.string(forKey: "defaultsSuite"), !suite.isEmpty,
-              let defaults = UserDefaults(suiteName: suite) else { return .standard }
-        return defaults
+        let requested = UserDefaults.standard.string(forKey: "defaultsSuite")
+        let suite = requested.flatMap { value in
+            let normalized = value.lowercased()
+            return value.isEmpty || normalized == "com.abdurrahim.digup" || normalized.hasPrefix("com.abdurrahim.digup.") ? nil : value
+        } ?? AppIdentity.bundleIdentifier
+        return UserDefaults(suiteName: suite)!
     }()
 
     static func load() -> AppSettings {
         let defaults = Self.defaults
+        let requestedIndex = defaults.string(forKey: "indexDir").map(folderURL) ?? defaultIndexDirectory
+        let requestedModels = defaults.string(forKey: "modelsDir").map(folderURL) ?? ModelFiles.installed
         return AppSettings(
             roots: folders(defaults, "roots"),
             excludedFolders: folders(defaults, "excludedFolders"),
             excludedTypes: (defaults.stringArray(forKey: "excludedTypes")
                 ?? defaults.string(forKey: "excludedTypes").map { [$0] } ?? [])
                 .flatMap { IndexOptions.extensions($0) }.sorted(),
-            indexDirectory: defaults.string(forKey: "indexDir").map(folderURL) ?? defaultIndexDirectory,
-            modelsDirectory: defaults.string(forKey: "modelsDir").map(folderURL) ?? ModelFiles.installed,
+            indexDirectory: AppIdentity.isOriginalDataDirectory(requestedIndex) ? defaultIndexDirectory : requestedIndex,
+            modelsDirectory: AppIdentity.isOriginalDataDirectory(requestedModels) ? ModelFiles.installed : requestedModels,
             hotkey: defaults.string(forKey: "hotkey") ?? defaultHotkey,
             indexOnBattery: defaults.object(forKey: "indexOnBattery") == nil || defaults.bool(forKey: "indexOnBattery"),
             encoderIdleSeconds: defaults.object(forKey: "encoderIdleSeconds") == nil

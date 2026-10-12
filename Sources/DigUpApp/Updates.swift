@@ -1,4 +1,5 @@
 import AppKit
+import DigUpKit
 import Sparkle
 
 /// In-app updates, with Sparkle. Once a day DigUp reads its appcast (`SUFeedURL` in Info.plist); a newer version is
@@ -23,6 +24,7 @@ final class Updates: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate
     /// Dev and test runs (their own defaults suite) don't check: Sparkle keeps its state in the app's real defaults.
     /// `-debugUpdates YES` lets one check anyway.
     func start() {
+        guard AppIdentity.updatesEnabled else { return }
         let defaults = UserDefaults.standard
         guard defaults.string(forKey: "defaultsSuite") == nil || defaults.bool(forKey: "debugUpdates") else { return }
         controller.startUpdater()
@@ -31,19 +33,21 @@ final class Updates: NSObject, SPUUpdaterDelegate, SPUStandardUserDriverDelegate
     }
 
     var automaticallyChecks: Bool {
-        get { controller.updater.automaticallyChecksForUpdates }
-        set { controller.updater.automaticallyChecksForUpdates = newValue }
+        get { AppIdentity.updatesEnabled && controller.updater.automaticallyChecksForUpdates }
+        set { if AppIdentity.updatesEnabled { controller.updater.automaticallyChecksForUpdates = newValue } }
     }
 
-    var canCheck: Bool { controller.updater.canCheckForUpdates }
+    var canCheck: Bool { AppIdentity.updatesEnabled && controller.updater.canCheckForUpdates }
 
     /// "Check for Updates…" and the waiting update's menu item: Sparkle's window, in front.
     func checkNow() {
+        guard AppIdentity.updatesEnabled else { return }
         controller.checkForUpdates(nil)
     }
 
     /// A check in the background, as the daily one (for `-debugUpdateCheck`).
     func checkInBackground() {
+        guard AppIdentity.updatesEnabled else { return }
         controller.updater.checkForUpdatesInBackground()
     }
 

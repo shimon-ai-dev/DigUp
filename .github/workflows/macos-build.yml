@@ -98,7 +98,18 @@ jobs:
           # Change the ephemeral build input before signing, never a signed bundle afterwards.
           /usr/libexec/PlistBuddy -c 'Set :SUEnableAutomaticChecks false' Resources/Info.plist
           ./build.sh 2>&1 | tee "$RUNNER_TEMP/digup-app-build.log"
-          codesign --verify --deep --strict --verbose=2 build.noindex/DigUp.app
+          codesign --verify --deep --strict --verbose=2 build.noindex/DigUpTest.app
+          plist=build.noindex/DigUpTest.app/Contents/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = io.github.xieshiqi147258.DigUp.ci
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")" = DigUpTest
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUEnableAutomaticChecks' "$plist")" = false
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$plist")" = https://example.invalid/digup-ci/appcast.xml
+          codesign -d --verbose=4 build.noindex/DigUpTest.app/Contents/Helpers/digup-test \
+            2> "$RUNNER_TEMP/digup-helper-identity.log"
+          grep -qx 'Identifier=io.github.xieshiqi147258.DigUp.ci.helper' "$RUNNER_TEMP/digup-helper-identity.log"
+          build.noindex/DigUpTest.app/Contents/Helpers/digup-test status > "$RUNNER_TEMP/digup-helper-status.log"
+          test -f "$HOME/Library/Application Support/DigUpTest/index.noindex/index.sqlite"
+          test ! -e "$HOME/Library/Application Support/DigUp"
           git diff --exit-code -- Package.resolved
           test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
 
@@ -109,21 +120,22 @@ jobs:
           mkdir -p dist
           cp LICENSE build.noindex/LICENSE
           cp docs/ci-macos.md build.noindex/TESTING.md
+          cp docs/chinese-regressions.md build.noindex/CHINESE-REGRESSIONS.md
           {
             printf 'Source commit: %s\n' "$GITHUB_SHA"
             printf 'Workflow run: %s/actions/runs/%s\n' "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             printf 'llama.cpp: b11461 (%s) plus scripts/llama.cpp-no-logits.patch\n' "$LLAMA_REVISION"
             printf 'Sparkle: 2.10.0 (%s)\n' "$SPARKLE_REVISION"
-            printf 'Signing: ad-hoc, no notarization. Models: not included.\n'
-            printf 'Tests: no-model baseline; ReferenceVectorTests skipped. No end-to-end validation.\n'
+            printf 'Signing: ad-hoc, no notarization. Public text model tested but not bundled; media model not downloaded.\n'
+            printf 'Tests: Chinese synthetic keyword regression and native text-token budget; ReferenceVectorTests skipped (media absent). No end-to-end validation.\n'
             cat "$RUNNER_TEMP/digup-toolchain.log"
           } > build.noindex/BUILD-INFO.txt
-          archive="DigUp-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
+          archive="DigUpTest-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
           # tar preserves executable modes and symlinks; do not upload the .app directory directly.
-          tar -czf "dist/$archive" -C build.noindex DigUp.app LICENSE TESTING.md BUILD-INFO.txt
+          tar -czf "dist/$archive" -C build.noindex DigUpTest.app LICENSE TESTING.md CHINESE-REGRESSIONS.md BUILD-INFO.txt
           verify_dir="$(mktemp -d "$RUNNER_TEMP/digup-archive.XXXXXX")"
           tar -xzpf "dist/$archive" -C "$verify_dir"
-          python3 - build.noindex/DigUp.app "$verify_dir/DigUp.app" <<'PY'
+          python3 - build.noindex/DigUpTest.app "$verify_dir/DigUpTest.app" <<'PY'
           import os
           import stat
           import sys
@@ -143,9 +155,9 @@ jobs:
 
           assert manifest(Path(sys.argv[1])) == manifest(Path(sys.argv[2])), 'Archive changed modes, paths or symlinks'
           PY
-          test -x "$verify_dir/DigUp.app/Contents/MacOS/DigUp"
-          test -x "$verify_dir/DigUp.app/Contents/Helpers/digup"
-          codesign --verify --deep --strict --verbose=2 "$verify_dir/DigUp.app"
+          test -x "$verify_dir/DigUpTest.app/Contents/MacOS/DigUpTest"
+          test -x "$verify_dir/DigUpTest.app/Contents/Helpers/digup-test"
+          codesign --verify --deep --strict --verbose=2 "$verify_dir/DigUpTest.app"
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256" && shasum -a 256 --check "$archive.sha256")
 
       - name: Upload testing package and checksum
@@ -166,7 +178,7 @@ jobs:
         run: |
           {
             printf 'Tests: %s; app build: %s; archive verification: %s.\n\n' "$TEST_OUTCOME" "$BUILD_OUTCOME" "$ARCHIVE_OUTCOME"
-            printf 'No model files are downloaded. ReferenceVectorTests is skipped by its model-presence condition.\n\n'
+            printf 'Pinned public text weights are verified for native token-budget tests. ReferenceVectorTests skips because media weights are absent.\n\n'
             printf 'This ad-hoc, non-notarized testing package is not an official release or an end-to-end validation.\n'
           } >> "$GITHUB_STEP_SUMMARY"
 

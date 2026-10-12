@@ -54,9 +54,12 @@ public final class IndexStore {
     public let file: URL
 
     public init(directory: URL, file name: String = IndexStore.mainFile) throws {
+        try AppIdentity.validateIndexDirectory(directory)
+        let indexFile = directory.appendingPathComponent(name)
+        try AppIdentity.validateIndexDirectory(indexFile)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         self.directory = directory
-        file = directory.appendingPathComponent(name)
+        file = indexFile
         db = try Database(path: file.path)
         try migrate()
     }

@@ -21,7 +21,7 @@ let usage = """
       digup worker [--text-only]              the model as a process (JSON lines; the app's query encoder)
 
     Options:
-      --index DIR          index folder (default: ~/Library/Application Support/DigUp/index.noindex)
+      --index DIR          index folder (default: ~/Library/Application Support/DigUpTest/index.noindex)
       --code               estimate, index or show the code index of these folders (code.sqlite in the index
                            folder): source files, their repos' docs and notebooks, minus what git ignores
       --kind K,K           screenshot, image, pdf, doc, audio, video
@@ -36,7 +36,7 @@ let usage = """
       --code-stretch N     characters a stretch of code holds at most (default 1800; 1200 and 3600 lost on the evals)
 
     The model: EmbeddingGemma 2 on llama.cpp, from $DIGUP_MODELS (only there, when set), else
-    ~/Library/Application Support/DigUp/Models or the Hugging Face cache. DIGUP_WORKER_DIR=worker uses the
+    ~/Library/Application Support/DigUpTest/Models or the Hugging Face cache. DIGUP_WORKER_DIR=worker uses the
     mlx-vlm reference worker instead (evals).
     """
 
@@ -77,7 +77,7 @@ struct Arguments {
     }
 
     var indexFolder: URL {
-        URL(fileURLWithPath: ((values["--index"] ?? "~/Library/Application Support/DigUp/index.noindex")
+        URL(fileURLWithPath: ((values["--index"] ?? AppIdentity.indexDirectory.path)
             as NSString).expandingTildeInPath).standardizedFileURL
     }
 

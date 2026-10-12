@@ -12,7 +12,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="DigUp"
+APP_NAME="DigUpTest"
+HELPER_NAME="digup-test"
+HELPER_ID="io.github.xieshiqi147258.DigUp.ci.helper"
 # ".noindex" keeps Spotlight (and the Apps list) from showing this staging copy.
 APP="build.noindex/$APP_NAME.app"
 
@@ -38,7 +40,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 # The binary is DigUpApp in SwiftPM (it can't share a name with the `digup` CLI on a case-insensitive disk).
 cp "$BIN_DIR/DigUpApp" "$APP/Contents/MacOS/$APP_NAME"
 # The indexing helper lives in Helpers/: next to DigUp in MacOS/ it would collide on a case-insensitive disk.
-cp "$BIN_DIR/digup" "$APP/Contents/Helpers/digup"
+cp "$BIN_DIR/digup" "$APP/Contents/Helpers/$HELPER_NAME"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 xcrun actool --compile "$APP/Contents/Resources" --platform macosx --target-device mac --minimum-deployment-target 14.0 \
   --app-icon AppIcon --output-partial-info-plist "$(mktemp -d)/AppIcon.plist" --enable-on-demand-resources NO \
@@ -66,7 +68,7 @@ PLIST="$APP/Contents/Info.plist"
 # entitlement lets it ask QuickTime Player to open a recording at a moment.
 IDENTITY="${SIGN_ID:-$( [[ -f .sign-id ]] && head -1 .sign-id || echo - )}"
 TIMESTAMP=$([[ "${RELEASE:-}" == 1 ]] && echo --timestamp || echo --timestamp=none)
-codesign --force --sign "$IDENTITY" --options runtime $TIMESTAMP "$APP/Contents/Helpers/digup"
+codesign --force --sign "$IDENTITY" --identifier "$HELPER_ID" --options runtime $TIMESTAMP "$APP/Contents/Helpers/$HELPER_NAME"
 # Sparkle comes ad-hoc signed: its helpers, then the framework, with this identity (the app may only load code signed
 # by its own team).
 for code in "$FW/Versions/B/Autoupdate" "$FW/Versions/B/Updater.app" "$FW"; do
