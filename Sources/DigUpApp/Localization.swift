@@ -90,7 +90,7 @@ nonisolated struct Localization: Sendable {
 
     static let resourceBundleName = AppLocalizationResources.bundleName
     static func resourceBundle(appBundle: Bundle) throws -> Bundle {
-        if appBundle.bundleURL.pathExtension == "app" {
+        if appBundle.bundleURL.pathExtension.lowercased() == "app" || appBundle.infoDictionary?["CFBundlePackageType"] as? String == "APPL" {
             guard let url = appBundle.resourceURL?.appendingPathComponent(resourceBundleName),
                   let found = Bundle(url: url),
                   FileManager.default.fileExists(atPath: url.appendingPathComponent("en.lproj/Localizable.strings").path)
