@@ -491,7 +491,7 @@ struct SearchWindowView: View {
 
     private var resultCount: String {
         let count = search.results.ranked.count
-        return Localization.current.resultsSummary(count, weaker: search.results.weaker.count)
+        return Localization.current.resultsSummary(count, weaker: search.results.weaker.count, suggestions: search.results.suggestionCount)
     }
 }
 
@@ -561,7 +561,8 @@ private struct ResultsGrid: View {
                     }
                     .padding(16)
                     if !search.results.weaker.isEmpty {
-                        WeakerToggle(count: search.results.weaker.count, expanded: search.showWeaker) {
+                        WeakerToggle(count: search.results.weaker.count, expanded: search.showWeaker,
+                                     suggestions: search.results.suggestionCount) {
                             search.showWeaker.toggle()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -633,6 +634,10 @@ private struct GridCell: View {
                 .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: selected ? 3 : 0.5)
                 .padding(selected ? -3 : 0))
             VStack(alignment: .leading, spacing: 1) {
+                if row.isSuggestion {
+                    Text(Localization.current.text("result.suggestionBadge", fallback: "Low confidence"))
+                        .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                }
                 Text(row.title)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
@@ -662,7 +667,8 @@ private struct CodeResultsList: View {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(search.results.ranked) { row in item(row) }
                     if !search.results.weaker.isEmpty {
-                        WeakerToggle(count: search.results.weaker.count, expanded: search.showWeaker) {
+                        WeakerToggle(count: search.results.weaker.count, expanded: search.showWeaker,
+                                     suggestions: search.results.suggestionCount) {
                             search.showWeaker.toggle()
                         }
                         .padding(.horizontal, 10)
@@ -786,6 +792,7 @@ private struct MomentThumbnail: View {
 struct WeakerToggle: View {
     let count: Int
     let expanded: Bool
+    var suggestions = 0
     let toggle: () -> Void
 
     var body: some View {
@@ -794,7 +801,7 @@ struct WeakerToggle: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .rotationEffect(.degrees(expanded ? 90 : 0))
-                Text(expanded ? Localization.current.text("search.weaker.title", fallback: "Weaker matches") : Localization.current.weakerCount(count))
+                Text(expanded ? Localization.current.weakerTitle(suggestions: suggestions) : Localization.current.weakerCount(count, suggestions: suggestions))
                     .font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(.secondary)

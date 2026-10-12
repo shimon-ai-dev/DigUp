@@ -102,6 +102,7 @@ nonisolated final class Engine: @unchecked Sendable {
     /// When a sync was last asked for that no helper has started yet; a helper that exits before doing it is
     /// restarted.
     private var syncWantedAt: Date?
+    private var mediaRetryWanted = false
     private var lastSearcherRefresh = Date.distantPast
 
     /// Code search: the code index once code has been quiet this long (a file being edited changes on every save, a
@@ -281,6 +282,15 @@ nonisolated final class Engine: @unchecked Sendable {
         update { $0.waitingForModel = false }
         encoderQueue.async { [self] in encoderFailed = false }
         indexQueue.async { [self] in requestSync() }
+    }
+
+    /// Explicitly retry failed media in connected, selected folders. The helper keeps already successful segments.
+    func retryFailedMedia() {
+        indexQueue.async { [self] in
+            mediaRetryWanted = true
+            syncWantedAt = Date()
+            if helper != nil { send("retry failed") } else { startHelper() }
+        }
     }
 
     /// A drive was connected or ejected: a missing folder may be back (or gone).
@@ -467,6 +477,7 @@ nonisolated final class Engine: @unchecked Sendable {
         var arguments = ["index-service", "--index", indexDirectory.path]
         if backfill { arguments.append("--backfill") }
         if pruneWanted { arguments.append("--prune") }
+        if mediaRetryWanted { arguments.append("--retry-failed") }
         for folder in excluded { arguments += ["--exclude", folder.path] }
         for type in types { arguments += ["--exclude-ext", type] }
         for folder in codeRoots { arguments += ["--code-root", folder.path] }
@@ -541,6 +552,9 @@ nonisolated final class Engine: @unchecked Sendable {
             if int("new") > 0 { update { $0.activity = .indexing(done: 0, total: int("new")) } }
             log("sync: \(int("added")) new · \(int("changed")) changed · \(int("moved")) moved · "
                 + "\(int("removed")) removed · \(int("unchanged")) unchanged in \(int("ms")) ms")
+        case "media-retry":
+            mediaRetryWanted = false
+            log("indexer: explicit retry of \(int("files")) failed media files")
         case "file":
             let (done, total) = (int("done"), int("total"))
             update { $0.activity = .indexing(done: done, total: total) }
@@ -662,10 +676,16 @@ nonisolated final class Engine: @unchecked Sendable {
             // The folders changed: a new helper with the new ones.
             restartHelper = false
             startHelper()
-        } else if syncWantedAt != nil, status == 0 {
+        } else if Self.shouldRestartHelper(exitStatus: status, retryWanted: mediaRetryWanted,
+                                          syncWanted: syncWantedAt != nil) {
             // A sync asked for while it was on its way out still has to happen.
             startHelper()
         }
+    }
+
+    /// A clean exit may race with an incoming request. A fatal exit needs a new explicit attempt, never a crash loop.
+    static func shouldRestartHelper(exitStatus: Int32, retryWanted: Bool, syncWanted: Bool) -> Bool {
+        exitStatus == 0 && (retryWanted || syncWanted)
     }
 
     /// New vectors reach the panel: reload the searcher's copy, at most every 2 s during a long pass. If the panel
@@ -796,8 +816,10 @@ nonisolated final class Engine: @unchecked Sendable {
         var missing = false
         var unreadable = false
         var files = 0, indexed = 0, pending = 0, failed = 0, skipped = 0
+        var failedMedia = 0
         var unfinished = 0   // long files searchable but still being read (counted in `indexed` too)
         var kinds: [FileKind: Int] = [:]
+        var failedDetails: [String] = []
         var id: String { path }
     }
 
@@ -819,7 +841,14 @@ nonisolated final class Engine: @unchecked Sendable {
                             summary.indexed += 1
                             summary.unfinished += 1
                         case "pending": summary.pending += 1
-                        case "failed": summary.failed += 1
+                        case "failed":
+                            summary.failed += 1
+                            if [.audio, .video, .image, .screenshot].contains(file.kind) { summary.failedMedia += 1 }
+                            if summary.failedDetails.count < 8 {
+                                var detail: String?
+                                try? store?.db.query("SELECT detail FROM files WHERE id = ?", [.int(file.id)]) { detail = $0.text(0) }
+                                summary.failedDetails.append("\((file.path as NSString).lastPathComponent): \(detail ?? "")")
+                            }
                         default: summary.skipped += 1
                         }
                     }

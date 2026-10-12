@@ -13,6 +13,8 @@ import Testing
         let queries: [Query]
     }
     static let textModelPresent = (try? LlamaModels.locate()) != nil
+    static let helperPresent = ProcessInfo.processInfo.environment["DIGUP_TEST_HELPER"]
+        .map { FileManager.default.isExecutableFile(atPath: $0) } ?? false
     static let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("MediaRecovery/public-audio-vectors.json")
 
@@ -36,6 +38,39 @@ import Testing
                 print("MEDIA_RECOVERY_REPLAY \(query.query): \(hits.first?.path ?? "empty") cosine=\(hits.first?.cosine ?? -1) z=\(hits.first?.z ?? -1)")
             }
         }
+    }
+
+    @Test(.enabled(if: textModelPresent && helperPresent)) func actualCLIJsonMarksRecoveredAudioAsLowConfidence() throws {
+        guard let helper = ProcessInfo.processInfo.environment["DIGUP_TEST_HELPER"] else {
+            throw CocoaError(.fileNoSuchFile)   // Acceptance CI must build the actual helper before running tests.
+        }
+        let corpus = try JSONDecoder().decode(Corpus.self, from: Data(contentsOf: Self.source))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DigUpTest-real-json-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try IndexStore(directory: directory)
+        for (n, media) in corpus.media.enumerated() {
+            let id = try store.insert(Candidate(path: "/public-synthetic/\(media.name)", kind: .audio,
+                                               size: 1, mtime: 1, inode: UInt64(n + 1), device: 1))
+            try store.addSegment(file: id, kind: .audio, modality: .audio, loc: 0, locEnd: 6, vector: media.vector)
+        }
+        let process = Process(), output = Pipe(), errors = Pipe()
+        process.executableURL = URL(fileURLWithPath: helper)
+        process.arguments = ["search", "baking a chocolate cake", "--index", directory.path, "--kind", "audio", "--json"]
+        process.environment = ProcessInfo.processInfo.environment
+        process.standardOutput = output; process.standardError = errors
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let stderr = errors.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0, String(data: stderr, encoding: .utf8) ?? "CLI failed")
+        let rows = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+        #expect(rows.first?["path"] as? String == "/public-synthetic/f004.wav")
+        #expect(rows.first?["is_suggestion"] as? Bool == true)
+        #expect(rows.first?["match_type"] as? String == "low_confidence_suggestion")
+        #expect(rows.first?["segment"] as? String == "audio")
+        #expect(rows.first?["loc"] as? Double == 0)
+        #expect(rows.first?["loc_end"] as? Double == 6)
+        print("MEDIA_RECOVERY_CLI_JSON real helper: low_confidence_suggestion, audio timestamp retained")
     }
 
     @Test func mixedCorpusKeepsRecoveredAudioBelowExistingMatches() throws {

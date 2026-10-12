@@ -22,6 +22,8 @@ public struct SearchHit: Sendable {
     /// Code: the line to open at, in the stretch (`loc`…`locEnd`): where the name looked up is defined, or the first
     /// line with the query's words. Nil: the stretch's first line.
     public var focus: Double? = nil
+    /// Below the normal relevance gate: a bounded media candidate, always shown separately as low confidence.
+    public var isSuggestion = false
 }
 
 /// Hybrid search: meaning (EmbeddingGemma's vectors) + words (FTS5).
@@ -71,7 +73,7 @@ public final class Searcher {
             SELECT s.id, s.file, s.modality, s.vec, s.kind, s.loc, f.kind, CAST(json_extract(f.info, '$.pages') AS INTEGER)
             FROM segments s JOIN files f ON f.id = s.file WHERE s.vec IS NOT NULL ORDER BY s.id
             """) { row in
-            guard let blob = row.blob(3), blob.count == rowBytes, rowFile.count < rows else { return }
+            guard let blob = row.blob(3), blob.count == rowBytes, Vectors.validHalf(blob), rowFile.count < rows else { return }
             blob.copyBytes(to: UnsafeMutableRawBufferPointer(start: matrix.halves + rowFile.count * Vectors.dimension,
                                                              count: rowBytes))
             rowSegment.append(row.int(0))
@@ -115,6 +117,7 @@ public final class Searcher {
 
     public func search(_ text: String, queryVector: [Float]?, kinds: Set<FileKind>? = nil, limit: Int = 20,
                        zGate: Double = 2.0, wordWeight: Double? = nil, prefixLast: Bool = false) throws -> [SearchHit] {
+        guard limit > 0, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
         let wordWeight = wordWeight ?? (isCode ? Self.codeWordWeight : Self.wordWeight)
         if queryVector != nil, !vectorsLoaded { try reload() }
         let fileKind = self.fileKind
@@ -125,12 +128,20 @@ public final class Searcher {
 
         // Meaning: score every vector on this query's scale (`meaning`), keep each file's best segment.
         var best: [Int64: (z: Double, cosine: Double, row: Int)] = [:]
-        if let query = queryVector, query.count == Vectors.dimension, !rowFile.isEmpty {
+        // Recovery has its own best raw-cosine segment per media modality; a video's higher-z frame must not hide
+        // sound that passes the recovery safeguards. Ordinary matches keep their original max-z segment and order.
+        var mediaBest: [Int64: [Modality: (z: Double, cosine: Double, row: Int)]] = [:]
+        if let query = queryVector, Vectors.valid(query), !rowFile.isEmpty {
             let scores = score(query)
             let meaning = Self.meaning(scores, rowModality, setsScale: rowSetsScale)
             for row in 0..<scores.count where allowed(rowFile[row]) {
                 let z = meaning[row]
                 if z > (best[rowFile[row]]?.z ?? -.infinity) { best[rowFile[row]] = (z, Double(scores[row]), row) }
+                if let kind = fileKind[rowFile[row]], [.audio, .video, .image, .screenshot].contains(kind),
+                   [.audio, .image].contains(rowModality[row]),
+                   Double(scores[row]) > (mediaBest[rowFile[row]]?[rowModality[row]]?.cosine ?? -.infinity) {
+                    mediaBest[rowFile[row], default: [:]][rowModality[row]] = (z, Double(scores[row]), row)
+                }
             }
         }
 
@@ -212,16 +223,50 @@ public final class Searcher {
             scored[file] = score
         }
 
+        // Keep every qualifying result and its order. Recovery is a separate, capped tier, only at the default gate
+        // (explicit --zgate remains an exact diagnostic control). Cosines are empirical safeguards, not probabilities.
+        // A within-modality contrast prevents a near-equal cluster of unrelated media becoming suggestions.
+        var suggestions: [Int64] = []
+        var recovered: [Int64: (z: Double, cosine: Double, row: Int)] = [:]
+        if !isCode, zGate == 2.0 {
+            var totals: [Modality: (sum: Double, count: Int)] = [:]
+            for matches in mediaBest.values {
+                for (modality, match) in matches {
+                    let old = totals[modality] ?? (0, 0)
+                    totals[modality] = (old.sum + match.cosine, old.count + 1)
+                }
+            }
+            for (file, matches) in mediaBest where !candidates.contains(file) {
+                for (modality, match) in matches where match.cosine >= 0.65 {
+                    if let total = totals[modality], total.count > 1 {
+                        let mean = (total.sum - match.cosine) / Double(total.count - 1)
+                        guard match.cosine - mean >= 0.04 else { continue }
+                    }
+                    if match.cosine > (recovered[file]?.cosine ?? -.infinity) { recovered[file] = match }
+                }
+            }
+            suggestions = Array(recovered.keys)
+            suggestions.sort {
+                recovered[$0]!.cosine > recovered[$1]!.cosine
+                    || (recovered[$0]!.cosine == recovered[$1]!.cosine && $0 < $1)
+            }
+            suggestions = Array(suggestions.prefix(3))
+        }
+        let qualified = scored.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
+            .prefix(limit).map { (file: $0.key, score: $0.value, suggestion: false) }
+        let ordered = qualified + suggestions.prefix(max(0, limit - qualified.count)).map {
+            (file: $0, score: max(recovered[$0]!.z, 0), suggestion: true)
+        }
+
         let wordRank = Dictionary(words.enumerated().map { ($0.element.file, ($0.offset + 1, $0.element)) },
                                   uniquingKeysWith: { first, _ in first })
         var hits: [SearchHit] = []
-        for (file, score) in scored.sorted(by: { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) })
-            .prefix(limit) {
+        for (file, score, suggestion) in ordered {
             let rank = hits.count
-            let semantic = best[file]
+            let semantic = suggestion ? recovered[file] : best[file]
             let keyword = wordRank[file]
             // Point at the best meaning segment if it stands out; else at the segment the words matched.
-            let useMeaning = semantic.map { $0.z >= zGate || keyword == nil } ?? false
+            let useMeaning = semantic.map { suggestion || $0.z >= zGate || keyword == nil } ?? false
             guard var segmentID = useMeaning ? semantic.map({ rowSegment[$0.row] }) : keyword?.1.segment else { continue }
             var focus: Double?
             if isCode {
@@ -262,11 +307,13 @@ public final class Searcher {
                 }
                 if matchedKind != SegmentKind.name.rawValue { snippet = excerpt(text, limit: 400) }
             }
-            hits.append(SearchHit(path: path, kind: kind, score: score, z: semantic?.z, cosine: semantic?.cosine,
+            var hit = SearchHit(path: path, kind: kind, score: score, z: semantic?.z, cosine: semantic?.cosine,
                                   keywordRank: keyword?.0, segment: segment, segmentID: segmentID, loc: loc,
                                   locEnd: locEnd,
                                   excerpt: snippet ?? storedExcerpt, modified: modified, size: size, info: info,
-                                  focus: focus))
+                                  focus: focus)
+            hit.isSuggestion = suggestion
+            hits.append(hit)
         }
         return hits
     }
@@ -310,8 +357,9 @@ public final class Searcher {
     /// trail far behind, and the app folds them under "weaker matches". On both evals (2026-10-07), 0.5 cut the list
     /// from 26.2 to 5.7 results per query and never folded an expected answer.
     public static func strongCount(_ hits: [SearchHit], ratio: Double = 0.5) -> Int {
-        guard let top = hits.first?.score, top > 0 else { return hits.count }
-        return hits.prefix { $0.score >= top * ratio }.count
+        guard let first = hits.first, !first.isSuggestion else { return 0 }
+        guard first.score > 0 else { return hits.prefix { !$0.isSuggestion }.count }
+        return hits.prefix { !$0.isSuggestion && $0.score >= first.score * ratio }.count
     }
 
     /// Cosine similarity of `query` with every stored vector (all are L2-normalized): a matrix-vector product, done a

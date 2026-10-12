@@ -104,6 +104,13 @@ public final class Indexer {
                         summary.queued.append(row.id)
                     } else {
                         summary.unchanged += 1
+                        if row.state == "failed", [.audio, .video, .image, .screenshot].contains(row.kind) {
+                            let info = try store.info(of: row.id)
+                            if info["media_encoding_failed"] == "1", (Int(info["media_retry_count"] ?? "0") ?? 0) < 1 {
+                                try store.queueMediaRetry(row.id, automatic: true)
+                                summary.queued.append(row.id)
+                            }
+                        }
                     }
                 } else if let row = byInode["\(file.device):\(file.inode)"], !seen.contains(row.path),
                           !movedFrom.contains(row.path), row.size == file.size, abs(row.mtime - file.mtime) < 0.001 {
@@ -500,11 +507,24 @@ public final class Indexer {
         try store.db.transaction {
             for (position, item) in ready.enumerated() {
                 let file = batch[item.slot]
-                guard let vector = vectors[position].vector else {
-                    try store.finish(file.id, state: "failed", detail: vectors[position].error)
-                    results[item.slot] = ("failed", vectors[position].error)
+                let problem: String?
+                if vectors.count > ready.count {
+                    let context = vectors.compactMap(\.error).joined(separator: "; ")
+                    problem = "image response count mismatch: expected \(ready.count), received \(vectors.count)"
+                        + (context.isEmpty ? "" : "; " + context)
+                } else if position >= vectors.count {
+                    problem = "image missing response: expected \(ready.count), received \(vectors.count)"
+                } else if let error = vectors[position].error {
+                    problem = error
+                } else if vectors[position].vector.map(Vectors.valid) != true {
+                    problem = "image missing or invalid vector"
+                } else { problem = nil }
+                if let problem {
+                    try finishMedia(file, info: [:], problems: [problem])
+                    results[item.slot] = ("failed", problem)
                     continue
                 }
+                let vector = vectors[position].vector!
                 try store.addSegment(file: file.id, kind: .image, modality: .image, vector: vector)
                 // The words on screen are for keyword search: codes, names and errors typed exactly. Meaning comes from
                 // the picture alone; a vector of the words made screenshots outrank better matches (2026-10-08).
@@ -686,15 +706,18 @@ public final class Indexer {
             try store.finish(file.id, state: "skipped", detail: "silent or shorter than 2 s")
             return ("skipped", "silent or too short")
         }
-        let vectors = try fullWorker().embedAudio(pieces.map(\.path))
+        let worker = try fullWorker()   // adopt/check the model before deciding which stored vectors can be reused
+        let pending = try missingMedia(file.id, kind: .audio, pieces: pieces)
+        let vectors = pending.isEmpty ? [] : try worker.embedAudio(pending.map(\.path))
+        var problems: [String] = []
         try store.db.transaction {
-            for (piece, embedding) in zip(pieces, vectors) {
-                try store.addSegment(file: file.id, kind: .audio, modality: .audio, loc: piece.start, locEnd: piece.end,
-                                     vector: embedding.vector)
-            }
-            try store.finish(file.id, state: "done", info: ["duration": String(format: "%.1f", duration)])
+            try saveMedia(file.id, kind: .audio, modality: .audio, pieces: pending, embeddings: vectors,
+                          problems: &problems)
+            try finishMedia(file, info: ["duration": String(format: "%.1f", duration),
+                                               "sound_windows": "\(pieces.count)"], problems: problems)
         }
-        return ("done", "\(pieces.count) windows, \(Int(duration)) s")
+        return (problems.isEmpty ? "done" : "failed", problems.isEmpty
+                ? "\(pieces.count) windows, \(Int(duration)) s" : problems.joined(separator: "; "))
     }
 
     private func video(_ file: FileRecord, frames: [MediaPiece], sound: [MediaPiece], duration: Double) throws
@@ -704,20 +727,74 @@ public final class Indexer {
             return ("skipped", "no frames or sound")
         }
         let worker = try fullWorker()
-        let frameVectors = try worker.embedImages(frames.map(\.path), budget: options.frameBudget)
-        let soundVectors = try worker.embedAudio(sound.map(\.path))
+        let pendingFrames = try missingMedia(file.id, kind: .frame, pieces: frames)
+        let pendingSound = try missingMedia(file.id, kind: .audio, pieces: sound)
+        let frameVectors = pendingFrames.isEmpty ? []
+            : try worker.embedImages(pendingFrames.map(\.path), budget: options.frameBudget)
+        let soundVectors = pendingSound.isEmpty ? [] : try worker.embedAudio(pendingSound.map(\.path))
+        var problems: [String] = []
         try store.db.transaction {
-            for (frame, embedding) in zip(frames, frameVectors) {
-                try store.addSegment(file: file.id, kind: .frame, modality: .image, loc: frame.start,
-                                     locEnd: frame.end, vector: embedding.vector)
-            }
-            for (piece, embedding) in zip(sound, soundVectors) {
-                try store.addSegment(file: file.id, kind: .audio, modality: .audio, loc: piece.start,
-                                     locEnd: piece.end, vector: embedding.vector)
-            }
-            try store.finish(file.id, state: "done", info: ["duration": String(format: "%.1f", duration),
-                                                            "frames": "\(frames.count)", "sound_windows": "\(sound.count)"])
+            try saveMedia(file.id, kind: .frame, modality: .image, pieces: pendingFrames, embeddings: frameVectors,
+                          problems: &problems)
+            try saveMedia(file.id, kind: .audio, modality: .audio, pieces: pendingSound, embeddings: soundVectors,
+                          problems: &problems)
+            try finishMedia(file, info: ["duration": String(format: "%.1f", duration),
+                                        "frames": "\(frames.count)", "sound_windows": "\(sound.count)"],
+                            problems: problems)
         }
-        return ("done", "\(frames.count) frames, \(sound.count) sound windows, \(Int(duration)) s")
+        return (problems.isEmpty ? "done" : "failed", problems.isEmpty
+                ? "\(frames.count) frames, \(sound.count) sound windows, \(Int(duration)) s" : problems.joined(separator: "; "))
+    }
+
+    private struct MediaPosition: Hashable { let start: Double; let end: Double }
+
+    /// Existing valid locations survive a retry; invalid/empty legacy rows cannot count as success.
+    private func missingMedia(_ file: Int64, kind: SegmentKind, pieces: [MediaPiece]) throws -> [MediaPiece] {
+        var present = Set<MediaPosition>(), invalid: [Int64] = []
+        try store.db.query("SELECT id, loc, loc_end, vec FROM segments WHERE file = ? AND kind = ?",
+                           [.int(file), .text(kind.rawValue)]) { row in
+            if let vector = row.blob(3), Vectors.validHalf(vector), !row.isNull(1), !row.isNull(2) {
+                present.insert(MediaPosition(start: row.double(1), end: row.double(2)))
+            } else { invalid.append(row.int(0)) }
+        }
+        for id in invalid { try store.db.run("DELETE FROM segments WHERE id = ?", [.int(id)]) }
+        return pieces.filter { !present.contains(MediaPosition(start: $0.start, end: $0.end)) }
+    }
+
+    private func saveMedia(_ file: Int64, kind: SegmentKind, modality: Modality, pieces: [MediaPiece],
+                           embeddings: [Embedding], problems: inout [String]) throws {
+        // A missing tail has identifiable successful prefix responses; excess responses are an invalid batch.
+        if embeddings.count > pieces.count {
+            problems.append("\(kind.rawValue) response count mismatch: expected \(pieces.count), received \(embeddings.count)")
+            problems += embeddings.compactMap(\.error).map { "\(kind.rawValue) response error: \($0)" }
+            return
+        }
+        for (index, piece) in pieces.enumerated() {
+            let place = "\(kind.rawValue) \(index + 1) at \(String(format: "%.2f", piece.start))–\(String(format: "%.2f", piece.end)) s"
+            guard index < embeddings.count else {
+                problems.append("\(place): missing response (expected \(pieces.count), received \(embeddings.count))")
+                continue
+            }
+            let embedding = embeddings[index]
+            if let error = embedding.error { problems.append("\(place): \(error)"); continue }
+            guard let vector = embedding.vector, Vectors.valid(vector) else {
+                problems.append("\(place): missing or invalid vector")
+                continue
+            }
+            try store.addSegment(file: file, kind: kind, modality: modality, loc: piece.start, locEnd: piece.end,
+                                 vector: vector)
+        }
+    }
+
+    private func finishMedia(_ file: FileRecord, info: [String: String], problems: [String]) throws {
+        var info = info
+        if !problems.isEmpty {
+            let previous = try store.info(of: file.id)
+            info["media_encoding_failed"] = "1"
+            info["media_retry_count"] = previous["media_retry_count"] ?? "0"
+            info["media_error_count"] = "\(problems.count)"
+        }
+        try store.finish(file.id, state: problems.isEmpty ? "done" : "failed",
+                         detail: problems.isEmpty ? nil : problems.joined(separator: "; "), info: info)
     }
 }

@@ -37,7 +37,19 @@ The extracted package also runs `scripts/smoke-test-bundle.py`: normal/code fold
 
 ## Test coverage limits
 
-CI downloads the pinned 310 MB public text model into a temporary folder and verifies its SHA-256. Native tokenizer-budget and limited text-inference tests actually run. The media model is not downloaded, and model weights are not bundled. `ReferenceVectorTests.vectorsMatchTheReference` is disabled by its existing `.enabled(if: modelsThere)` condition because the media model is absent. A green run therefore proves keyword regressions, text-budget tests, the remaining tests and build/package checks passed; it **does not** prove multimodal vector compatibility, UI behavior, semantic-search quality, or full end-to-end operation. The package includes no model weights, indexes, user files, signing identities or notarization credentials. The app can download its model when a person launches it; that download is outside this CI baseline.
+CI downloads the exact pinned public text model (310 MB) and media projector (555 MB) into a temporary folder,
+verifies both SHA-256 digests, and requires both to be present. The full native suite includes the fixed reference
+vector compatibility test, actual tokenizer/inference checks, four genuine public speech-vector replays with eight
+English/Chinese queries, six newly inferred no-match queries, mixed-modality assertions and per-input media failure/
+retry tests. Required evidence lines make accidental model-test skips fail acceptance. Each native test process has a
+bounded timeout and an always-uploaded log; the blocking AVFoundation regression suite is also run in a focused process.
+
+Reference vectors test runtime compatibility, not semantic understanding. The speech reference is synthetic speech-like
+audio. Genuine media vectors were produced in the earlier public synthetic-fixture probe and are reused rather than
+re-encoding all media. A green result does not prove arbitrary user-library quality, GUI layout, VoiceOver behavior or
+full end-to-end operation. See `MEDIA-RECOVERY.md` for provenance, confidence heuristics and limits. The package includes
+no model weights, indexes, user files, signing identities or notarization credentials. The app downloads its model when
+launched; the isolated on-device download is outside packaging smoke checks.
 
 ## Isolated manual testing
 

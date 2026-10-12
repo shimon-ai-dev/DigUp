@@ -45,13 +45,14 @@ final class IndexService: @unchecked Sendable {
 
     private let lock = NSLock()
     private var syncRequested = true       // the first thing it does
+    private var mediaRetryRequested = false
     private var codeSyncRequested = true
     private var stopRequested = false
     private var backfillAllowed: Bool
     private let wake = DispatchSemaphore(value: 0)
 
     init(main: Part, code: Part?, model: SharedEmbedder, modelReady: @escaping () -> Bool, backfill: Bool,
-         newFilesLimit: Int, linger: Double) {
+         newFilesLimit: Int, linger: Double, retryFailedMedia: Bool = false) {
         self.main = main
         self.code = code
         self.model = model
@@ -59,6 +60,7 @@ final class IndexService: @unchecked Sendable {
         self.backfillAllowed = backfill
         self.newFilesLimit = newFilesLimit
         self.linger = linger
+        self.mediaRetryRequested = retryFailedMedia
     }
 
     private var parts: [Part] { [main] + (code.map { [$0] } ?? []) }
@@ -170,7 +172,16 @@ final class IndexService: @unchecked Sendable {
     private func sync(_ part: Part, into newFiles: inout Set<Int64>) {
         let started = Date()
         do {
-            let summary = try part.indexer.sync(availableRoots(part))
+            let roots = availableRoots(part)
+            if !part.code, lock.withLock({ () -> Bool in
+                defer { mediaRetryRequested = false }; return mediaRetryRequested
+            }) {
+                let previouslyPending = Set(try part.store.pending(limit: nil).map(\.id))
+                let count = try part.store.retryFailedMedia()
+                newFiles.formUnion(try part.store.pending(limit: nil).map(\.id).filter { !previouslyPending.contains($0) })
+                emit(["event": "media-retry", "files": count])
+            }
+            let summary = try part.indexer.sync(roots)
             if summary.queued.count <= newFilesLimit { newFiles.formUnion(summary.queued) }
             emitCounts("sync", [
                 "code": part.code,
@@ -255,6 +266,7 @@ final class IndexService: @unchecked Sendable {
             lock.withLock {
                 switch line.trimmingCharacters(in: .whitespaces) {
                 case "sync": syncRequested = true
+                case "retry failed": mediaRetryRequested = true; syncRequested = true
                 case "sync code": codeSyncRequested = true
                 case "stop": stopRequested = true
                 case "backfill on": backfillAllowed = true

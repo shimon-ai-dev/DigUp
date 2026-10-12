@@ -92,7 +92,8 @@ struct SearchPanelView: View {
                                            reveal: { controller.revealSelected() }, controlSize: .small)
                         }
                     } else if controller.selection == SearchPanelController.weakerToggle {
-                        WeakerExplainer(count: controller.results.weaker.count, expanded: controller.showWeaker)
+                        WeakerExplainer(count: controller.results.weaker.count, expanded: controller.showWeaker,
+                                        suggestions: controller.results.suggestionCount)
                     }
                 }
                 .padding(16)
@@ -146,7 +147,8 @@ struct SearchPanelView: View {
             if !controller.isCode, let caveat = controller.model.resultsCaveat { return caveat }
             let count = controller.results.strongRows.count
             let weaker = controller.results.weaker.count
-            return Localization.current.resultsSummary(count, weaker: weaker, code: controller.isCode)
+            return Localization.current.resultsSummary(count, weaker: weaker, code: controller.isCode,
+                                                       suggestions: controller.results.suggestionCount)
         }
     }
 }
@@ -186,7 +188,8 @@ private struct ResultList: View {
                     }
                     if !controller.results.weaker.isEmpty {
                         WeakerRow(count: controller.results.weaker.count, expanded: controller.showWeaker,
-                                  selected: controller.selection == SearchPanelController.weakerToggle)
+                                  selected: controller.selection == SearchPanelController.weakerToggle,
+                                  suggestions: controller.results.suggestionCount)
                             .id(SearchPanelController.weakerToggle)
                             .onTapGesture { controller.toggleWeaker() }
                             .padding(.top, 6)
@@ -247,6 +250,7 @@ private struct PanelRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let place = row.place { PlaceBadge(text: place) }
+                    if row.isSuggestion { PlaceBadge(text: Localization.current.text("result.suggestionBadge", fallback: "Low confidence")) }
                 }
                 if let excerpt = row.excerpt, row.matchedWords, row.kind != .code {
                     Text(highlighted(excerpt, size: 11))
@@ -279,13 +283,14 @@ private struct WeakerRow: View {
     let count: Int
     let expanded: Bool
     let selected: Bool
+    var suggestions = 0
 
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9.5, weight: .bold))
                 .rotationEffect(.degrees(expanded ? 90 : 0))
-            Text(expanded ? Localization.current.text("search.weaker.title", fallback: "Weaker matches") : Localization.current.weakerCount(count))
+            Text(expanded ? Localization.current.weakerTitle(suggestions: suggestions) : Localization.current.weakerCount(count, suggestions: suggestions))
                 .font(.system(size: 11.5, weight: .medium))
             Spacer()
         }
@@ -302,15 +307,16 @@ private struct WeakerRow: View {
 private struct WeakerExplainer: View {
     let count: Int
     let expanded: Bool
+    var suggestions = 0
 
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text(expanded ? Localization.current.text("search.weaker.title", fallback: "Weaker matches") : Localization.current.weakerCount(count))
+            Text(expanded ? Localization.current.weakerTitle(suggestions: suggestions) : Localization.current.weakerCount(count, suggestions: suggestions))
                 .font(.system(size: 14, weight: .semibold))
-            Text(expanded ? Localization.current.text("search.weaker.collapse", fallback: "They match much less well than the results above. Press Return to fold them away.") : Localization.current.text("search.weaker.expand", fallback: "They match much less well than the results above. Press Return to show them."))
+            Text(suggestions > 0 ? Localization.current.text("search.suggestions.explain", fallback: "Possible media matches below the usual relevance threshold. They may be unrelated. Press Return to show or hide them.") : expanded ? Localization.current.text("search.weaker.collapse", fallback: "They match much less well than the results above. Press Return to fold them away.") : Localization.current.text("search.weaker.expand", fallback: "They match much less well than the results above. Press Return to show them."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

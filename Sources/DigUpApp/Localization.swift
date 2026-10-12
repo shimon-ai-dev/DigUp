@@ -51,13 +51,25 @@ nonisolated struct Localization: Sendable {
     func filesCount(_ value: Int) -> String {
         count("count.files", value, one: "%lld file", other: "%lld files")
     }
-    func weakerCount(_ value: Int) -> String {
-        count("count.weaker", value, one: "%lld weaker match", other: "%lld weaker matches")
+    func weakerCount(_ value: Int, suggestions: Int = 0) -> String {
+        let weaker = count("count.weaker", value - suggestions, one: "%lld weaker match", other: "%lld weaker matches")
+        guard suggestions > 0 else { return weaker }
+        let suggested = format("search.suggestions.available", fallback: "%lld low-confidence suggestions", Int64(suggestions))
+        return value > suggestions ? format("search.results.withWeaker", fallback: "%@ · %@", weaker, suggested) : suggested
     }
-    func resultsSummary(_ strong: Int, weaker: Int, code: Bool = false) -> String {
+    func weakerTitle(suggestions: Int) -> String {
+        suggestions > 0 ? text("search.suggestions.title", fallback: "Weaker matches and low-confidence suggestions")
+            : text("search.weaker.title", fallback: "Weaker matches")
+    }
+    func resultsSummary(_ strong: Int, weaker: Int, code: Bool = false, suggestions: Int = 0) -> String {
+        if strong == 0, suggestions > 0 {
+            return format("search.suggestions.noStrong", fallback: "No strong matches · %@",
+                          weakerCount(weaker, suggestions: suggestions))
+        }
         let total = resultsCount(strong)
         let scope = code ? format("search.results.code", fallback: "%@ in your code", total) : total
-        return weaker > 0 ? format("search.results.withWeaker", fallback: "%@ · %@", scope, weakerCount(weaker)) : scope
+        return weaker > 0 ? format("search.results.withWeaker", fallback: "%@ · %@", scope,
+                                  weakerCount(weaker, suggestions: suggestions)) : scope
     }
 
     /// Display percentage preserves the original floor behavior; locale controls spacing and number syntax.

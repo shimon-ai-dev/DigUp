@@ -109,5 +109,13 @@
   "onboarding.privacy",
   "onboarding.folders.detail",
   "onboarding.permissions",
-  "onboarding.code.detail"
+  "onboarding.code.detail",
+  "result.reason.suggestion",
+  "result.suggestionBadge",
+  "search.suggestions.available",
+  "search.suggestions.title",
+  "search.suggestions.noStrong",
+  "search.suggestions.explain",
+  "settings.index.retryFailed",
+  "settings.index.retryDetail"
 ]

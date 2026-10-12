@@ -4,7 +4,7 @@ import Testing
 @testable import DigUpKit
 
 @Suite(.serialized) final class MediaEmbeddingFailureTests {
-    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("DigUpTest-media-errors-\(UUID().uuidString)")
+    let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("DigUpTest-media-errors-\(UUID().uuidString)")
     deinit { try? FileManager.default.removeItem(at: folder) }
 
     func setup(_ embedder: MediaFailureEmbedder) throws -> (IndexStore, Indexer, URL) {
@@ -64,6 +64,76 @@ import Testing
         #expect(try indexer.sync([files]).queued.isEmpty)
         #expect(try indexer.run().isEmpty)
         #expect(try store.counts().vectors == 0)
+    }
+
+    @Test func truncatedBatchRetainsItsSuccessfulPrefix() throws {
+        let embedder = MediaFailureEmbedder()
+        embedder.reply = { _ in [Embedding(vector: FakeEmbedder.vector(for: "prefix"), error: nil)] }
+        let (store, indexer, files) = try setup(embedder)
+        #expect(try indexer.run()["failed"] == 1)
+        #expect(try store.counts().vectors == 1)
+        #expect(try indexer.sync([files]).queued.count == 1)
+        embedder.reply = { $0.map { _ in Embedding(vector: FakeEmbedder.vector(for: "tail"), error: nil) } }
+        #expect(try indexer.run()["done"] == 1)
+        #expect(embedder.batchSizes == [3, 2])
+        #expect(try store.counts().vectors == 3)
+    }
+
+    @Test func explicitRetryIsScopedAndKeepsAlreadySuccessfulWindows() throws {
+        let embedder = MediaFailureEmbedder()
+        embedder.reply = { paths in paths.enumerated().map { n, _ in
+            Embedding(vector: n == 0 ? FakeEmbedder.vector(for: "good") : nil,
+                      error: n == 0 ? nil : "persistent synthetic decoder failure")
+        } }
+        let (store, indexer, files) = try setup(embedder)
+        #expect(try indexer.run()["failed"] == 1)
+        #expect(try indexer.sync([files]).queued.count == 1)
+        embedder.reply = { $0.map { _ in Embedding(vector: nil, error: "still failing") } }
+        #expect(try indexer.run()["failed"] == 1)
+        #expect(try indexer.sync([files]).queued.isEmpty)
+        let outside = try store.insert(Candidate(path: "/outside/other.wav", kind: .audio,
+                                                size: 1, mtime: 1, inode: 90, device: 1))
+        try store.finish(outside, state: "failed")
+        store.scope = [files.path]
+        #expect(try store.retryFailedMedia() == 1)
+        #expect(try store.counts().vectors == 1)
+        embedder.reply = { $0.map { _ in Embedding(vector: FakeEmbedder.vector(for: "finally recovered"), error: nil) } }
+        #expect(try indexer.run()["done"] == 1)
+        #expect(try store.counts().vectors == 3)
+        #expect(embedder.batchSizes == [3, 2, 2])
+        #expect(try store.files(under: ["/outside"]).first?.state == "failed")
+    }
+
+    @Test func excessResponsesFailClosedAndKeepWorkerErrorContext() throws {
+        let embedder = MediaFailureEmbedder()
+        embedder.reply = { paths in (0...paths.count).map { n in
+            Embedding(vector: FakeEmbedder.vector(for: "response"), error: n == 0 ? "extra response context" : nil)
+        } }
+        let (store, indexer, _) = try setup(embedder)
+        #expect(try indexer.run()["failed"] == 1)
+        #expect(try store.counts().vectors == 0)
+        var detail: String?
+        try store.db.query("SELECT detail FROM files") { detail = $0.text(0) }
+        #expect(detail?.contains("response count mismatch") == true)
+        #expect(detail?.contains("extra response context") == true)
+    }
+
+    @Test func excessImageResponsesKeepOriginalWorkerError() throws {
+        let embedder = MediaFailureEmbedder()
+        let (store, indexer, files) = try setup(embedder)
+        try FileManager.default.removeItem(at: files.appendingPathComponent("public-synthetic-tone.wav"))
+        let reference = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("LlamaRuntimeTests/Reference/photo.jpg")
+        try FileManager.default.copyItem(at: reference, to: files.appendingPathComponent("public-synthetic-photo.jpg"))
+        _ = try indexer.sync([files])
+        embedder.reply = { _ in [Embedding(vector: FakeEmbedder.vector(for: "photo"), error: "synthetic excess photo context"),
+                                Embedding(vector: FakeEmbedder.vector(for: "extra"), error: nil)] }
+        #expect(try indexer.run()["failed"] == 1)
+        #expect(try store.counts().vectors == 0)
+        var detail: String?
+        try store.db.query("SELECT detail FROM files") { detail = $0.text(0) }
+        #expect(detail?.contains("response count mismatch") == true)
+        #expect(detail?.contains("synthetic excess photo context") == true)
     }
 
     @Test func videoFrameFailureKeepsSoundAndRetriesOnlyMissingFrames() async throws {

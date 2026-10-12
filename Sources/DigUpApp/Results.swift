@@ -17,6 +17,7 @@ struct ResultRow: Identifiable, Equatable {
     let excerpt: String?    // matched words are wrapped in « »
     let matchedMeaning: Bool
     let matchedWords: Bool
+    let isSuggestion: Bool
     let modified: Date
     let size: Int64
     let info: [String: String]
@@ -43,6 +44,7 @@ struct ResultRow: Identifiable, Equatable {
         excerpt = hit.excerpt.flatMap { $0.isEmpty ? nil : $0 }
         matchedMeaning = (hit.z ?? 0) >= 2
         matchedWords = hit.keywordRank != nil
+        isSuggestion = hit.isSuggestion
         modified = Date(timeIntervalSince1970: hit.modified)
         size = hit.size
         info = hit.info
@@ -96,6 +98,10 @@ struct ResultRow: Identifiable, Equatable {
 
     /// Why it's here, in a few words: "Matches the picture", "Matches the frame at 0:06".
     var reason: String {
+        if isSuggestion {
+            return Localization.current.format("result.reason.suggestion", fallback: "Low-confidence suggestion · %@",
+                                               loc.map(Self.clock) ?? kind.title)
+        }
         guard matchedMeaning else { return matchedWords ? Localization.current.text("result.reason.words", fallback: "Has your words") : Localization.current.text("result.reason.name", fallback: "Matches its name") }
         let place = loc.map(Self.clock) ?? ""
         let page = loc.map { Localization.current.format("result.page", fallback: "page %lld", Int64($0)) } ?? Localization.current.text("result.aPage", fallback: "a page")
@@ -242,6 +248,7 @@ struct ResultSet: Equatable {
     var strongRows: [ResultRow] { groups.flatMap(\.rows) }
     var isEmpty: Bool { groups.isEmpty && weaker.isEmpty }
     var count: Int { strongRows.count + weaker.count }
+    var suggestionCount: Int { weaker.filter(\.isSuggestion).count }
 }
 
 extension FileKind {

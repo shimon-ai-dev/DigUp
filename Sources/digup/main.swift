@@ -30,6 +30,7 @@ let usage = """
       --exclude DIR        don't index this folder (repeatable)
       --exclude-ext EXT    don't index files with this extension (repeatable, or comma-separated: "heic,txt")
       --reindex            drop vectors and embed everything again (after changing settings or model)
+      --retry-failed       retry failed media, keeping successful windows and frames
       --zgate Z            how far a meaning match must stand out (default 2.0)
       --word-weight W      bonus for containing all of the query's words (default 2.0, and for code see Searcher)
       --shot-tokens N      vision tokens per screenshot (default 280; 560 was 2× slower, no better on real shots)
@@ -281,6 +282,10 @@ func index(_ args: Arguments) throws {
     indexer.embedderSource = embedderSource()
     try indexer.checkModel()
     let folders = try args.folders()
+    if args.flags.contains("--retry-failed") {
+        store.scope = folders.map(\.path)
+        _ = try store.retryFailedMedia()
+    }
     let sync = try indexer.sync(folders)
     print("index: \(tilde(store.file.path))")
     print("sync: \(sync.added) new · \(sync.changed) changed · \(sync.moved) moved · \(sync.removed) removed · \(sync.unchanged) unchanged")
@@ -349,7 +354,8 @@ func search(_ args: Arguments) throws {
     if args.flags.contains("--json") {
         let rows: [[String: Any]] = hits.map { hit in
             var row: [String: Any] = ["path": hit.path, "kind": hit.kind.rawValue, "segment": hit.segment.rawValue,
-                                      "score": hit.score]
+                                      "score": hit.score, "is_suggestion": hit.isSuggestion,
+                                      "match_type": hit.isSuggestion ? "low_confidence_suggestion" : "match"]
             if let z = hit.z { row["z"] = z }
             if let cosine = hit.cosine { row["cosine"] = cosine }
             if let rank = hit.keywordRank { row["keyword_rank"] = rank }
@@ -364,8 +370,12 @@ func search(_ args: Arguments) throws {
         return
     }
     if hits.isEmpty { print("no good matches") }
+    if !hits.isEmpty, Searcher.strongCount(hits) == 0, hits.contains(where: \.isSuggestion) {
+        print("no strong matches; low-confidence media suggestions follow")
+    }
     for (rank, hit) in hits.enumerated() {
-        let why = [hit.z.map { String(format: "z %.1f", $0) }, hit.keywordRank.map { "words #\($0)" }]
+        let why = [hit.isSuggestion ? "LOW-CONFIDENCE SUGGESTION" : nil,
+                   hit.z.map { String(format: "z %.1f", $0) }, hit.keywordRank.map { "words #\($0)" }]
             .compactMap { $0 }.joined(separator: ", ")
         let place = location(hit)
         print("\(lpad("\(rank + 1)", 2)). \(pad(hit.kind.rawValue, 10)) \((hit.path as NSString).lastPathComponent)"
@@ -426,7 +436,8 @@ func indexService(_ args: Arguments) throws -> Int32 {
                                modelReady: { embedderSource() == nil || LlamaModels.complete },
                                backfill: args.flags.contains("--backfill"),
                                newFilesLimit: args.values["--new-limit"].flatMap(Int.init) ?? 50,
-                               linger: args.values["--linger"].flatMap(Double.init) ?? 60)
+                               linger: args.values["--linger"].flatMap(Double.init) ?? 60,
+                               retryFailedMedia: args.flags.contains("--retry-failed"))
     return service.serve()
 }
 

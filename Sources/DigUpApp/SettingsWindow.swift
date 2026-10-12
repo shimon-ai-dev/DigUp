@@ -259,7 +259,7 @@ private struct FolderSettings: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(summaries) { summary in
-                        FolderStatusRow(summary: summary) { removing = summary }
+                        FolderStatusRow(summary: summary, retry: { state.app.engine.retryFailedMedia() }) { removing = summary }
                     }
                 } else {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity)
@@ -407,6 +407,7 @@ private struct IndexProgress: View {
 
 private struct FolderStatusRow: View {
     let summary: Engine.RootSummary
+    var retry: (() -> Void)? = nil
     let remove: () -> Void
 
     var body: some View {
@@ -447,6 +448,17 @@ private struct FolderStatusRow: View {
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                 if !states.isEmpty {
                     Text(states).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                if summary.failedMedia > 0, let retry, !summary.missing, !summary.unreadable {
+                    Button(Localization.current.text("settings.index.retryFailed", fallback: "Retry failed media"), action: retry)
+                        .buttonStyle(.link).font(.system(size: 11))
+                        .help(Localization.current.text("settings.index.retryDetail", fallback: "Retries failed media in all connected selected folders; keeps successful windows and frames."))
+                }
+                if !summary.failedDetails.isEmpty {
+                    Text(summary.failedDetails.joined(separator: "\n"))
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.trailing).lineLimit(3)
+                        .help(summary.failedDetails.joined(separator: "\n"))
                 }
             }
             Button(action: remove) {

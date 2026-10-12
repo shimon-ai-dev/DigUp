@@ -351,3 +351,13 @@
 "storage.size" = "Size on disk";
 "storage.status" = "Status";
 "update.available" = "DigUp %@ is available";
+
+/* Bounded media recovery. These labels are not calibrated probabilities. */
+"result.reason.suggestion" = "Low-confidence suggestion · %@";
+"result.suggestionBadge" = "Low confidence";
+"search.suggestions.available" = "%lld low-confidence suggestions";
+"search.suggestions.title" = "Weaker matches and low-confidence suggestions";
+"search.suggestions.noStrong" = "No strong matches · %@";
+"search.suggestions.explain" = "Possible media matches below the usual relevance threshold. They may be unrelated. Press Return to show or hide them.";
+"settings.index.retryFailed" = "Retry failed media";
+"settings.index.retryDetail" = "Retries failed media in all connected selected folders; keeps successful windows and frames.";

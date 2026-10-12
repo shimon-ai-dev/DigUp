@@ -351,3 +351,13 @@
 "storage.size" = "磁盘占用";
 "storage.status" = "状态";
 "update.available" = "DigUp %@ 已发布";
+
+/* Bounded media recovery. These labels are not calibrated probabilities. */
+"result.reason.suggestion" = "低可信度候选 · %@";
+"result.suggestionBadge" = "低可信度";
+"search.suggestions.available" = "%lld 个低可信度候选";
+"search.suggestions.title" = "较弱匹配与低可信度候选";
+"search.suggestions.noStrong" = "没有较强匹配 · %@";
+"search.suggestions.explain" = "这些媒体候选低于通常的相关性门槛，可能与查询无关。按回车键显示或收起。";
+"settings.index.retryFailed" = "重试失败的媒体";
+"settings.index.retryDetail" = "重试所有已连接的所选文件夹中失败的媒体，保留已成功处理的音频片段和视频帧。";

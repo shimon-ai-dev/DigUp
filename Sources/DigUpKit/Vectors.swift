@@ -5,6 +5,26 @@ import Foundation
 enum Vectors {
     static let dimension = 768
 
+    /// Embedders return unit vectors. Allow float16 rounding, but never score missing, non-finite or unnormalized data.
+    static func valid(_ vector: [Float]) -> Bool {
+        guard vector.count == dimension, vector.allSatisfy(\.isFinite) else { return false }
+        let squared = vector.reduce(0.0) { $0 + Double($1) * Double($1) }
+        return (0.9...1.1).contains(squared)
+    }
+
+    static func validHalf(_ data: Data) -> Bool {
+        guard data.count == dimension * MemoryLayout<Float16>.stride else { return false }
+        return data.withUnsafeBytes { bytes in
+            var squared = 0.0
+            for index in 0..<dimension {
+                let value = Float(bytes.loadUnaligned(fromByteOffset: index * 2, as: Float16.self))
+                guard value.isFinite else { return false }
+                squared += Double(value) * Double(value)
+            }
+            return (0.9...1.1).contains(squared)
+        }
+    }
+
     static func half(_ vector: [Float]) -> Data {
         let halves = vector.map { Float16($0) }
         return halves.withUnsafeBufferPointer { Data(buffer: $0) }

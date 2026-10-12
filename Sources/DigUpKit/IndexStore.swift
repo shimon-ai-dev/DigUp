@@ -310,6 +310,23 @@ public final class IndexStore {
                    [.int(id)])
     }
 
+    /// Retry unchanged media without discarding successfully embedded windows/frames. Automatic retries are bounded
+    /// by the count retained in info; explicit user retries reset that count for this attempt.
+    func queueMediaRetry(_ id: Int64, automatic: Bool) throws {
+        var info = try info(of: id)
+        info["media_retry_count"] = automatic ? "1" : "0"
+        try finish(id, state: "pending", info: info)
+    }
+
+    /// Explicit retry of failed media in the store's current connected-folder scope. Other files are left alone.
+    @discardableResult public func retryFailedMedia() throws -> Int {
+        var ids: [Int64] = []
+        try db.query("SELECT id FROM files WHERE state = 'failed' AND kind IN ('audio','video','image','screenshot')\(scopeSQL)",
+                     scopeValues) { ids.append($0.int(0)) }
+        try db.transaction { for id in ids { try queueMediaRetry(id, automatic: false) } }
+        return ids.count
+    }
+
     /// Same inode, size and date at a new path: a move or rename. Only the path changes; nothing is re-embedded.
     /// (Screenshot tools move screenshots into project folders all the time.)
     public func move(_ id: Int64, to path: String) throws {

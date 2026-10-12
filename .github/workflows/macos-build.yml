@@ -58,37 +58,68 @@ jobs:
           git diff --exit-code -- Package.resolved
           test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
 
-      - name: Download the pinned public text model for budget tests
+      - name: Download the exact pinned public text and media models
+        timeout-minutes: 12
         env:
           DIGUP_MODELS: ${{ runner.temp }}/digup-ci-models
         run: |
           set -euo pipefail
           mkdir -p "$DIGUP_MODELS"
-          model=embeddinggemma-2-Q8_0.gguf
-          curl --fail --location --retry 2 --connect-timeout 30 --max-time 480 \
-            --output "$DIGUP_MODELS/$model.partial" \
-            "https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/bfcd298762cc34d0357ece5ebdd31791a3a374d8/$model"
-          printf '2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135  %s\n' "$DIGUP_MODELS/$model.partial" \
-            | shasum -a 256 --check
-          mv "$DIGUP_MODELS/$model.partial" "$DIGUP_MODELS/$model"
-          echo 'Pinned public text model verified; native token/inference tests enabled. Media model absent.' \
+          python3 - "$DIGUP_MODELS" <<'PYMODELS'
+          import hashlib
+          import subprocess
+          import sys
+          from pathlib import Path
+          source = Path('Sources/DigUpKit/ModelFiles.swift').read_text()
+          revision = 'bfcd298762cc34d0357ece5ebdd31791a3a374d8'
+          assert f'public static let revision = "{revision}"' in source
+          files = [
+              ('embeddinggemma-2-Q8_0.gguf', 309855456, '2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135'),
+              ('mmproj-embeddinggemma-2-Q8_0.gguf', 554821024, 'c4a8a52691ecef40618438928bdf9e68379b854e24166f292592353db0aab64f'),
+          ]
+          for name, size, digest in files:
+              assert name in source and digest in source
+              partial = Path(sys.argv[1]) / (name + '.partial')
+              subprocess.run(['curl', '--fail', '--location', '--retry', '2', '--connect-timeout', '30',
+                              '--max-time', '480', '--output', str(partial),
+                              f'https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/{revision}/{name}'],
+                             check=True, timeout=500)
+              assert partial.stat().st_size == size, name
+              checksum = hashlib.sha256()
+              with partial.open('rb') as file:
+                  while chunk := file.read(8 << 20): checksum.update(chunk)
+              assert checksum.hexdigest() == digest, name
+              partial.replace(Path(sys.argv[1]) / name)
+              print(f'Verified {name}: {size} bytes, SHA-256 {digest}', flush=True)
+          PYMODELS
+          echo 'Pinned text and media models verified; native inference, reference and no-match controls required.' \
             | tee "$RUNNER_TEMP/digup-model-coverage.log"
 
-      - name: Test with the pinned text model
+      - name: Test with both pinned models
+        timeout-minutes: 12
         id: tests
         env:
           DIGUP_MODELS: ${{ runner.temp }}/digup-ci-models
         run: |
           set -euo pipefail
           mkdir -p "$DIGUP_MODELS"
-          echo 'Text-model budget tests enabled. No media model: ReferenceVectorTests skips; this is not an end-to-end test.'
+          test -s "$DIGUP_MODELS/embeddinggemma-2-Q8_0.gguf"
+          test -s "$DIGUP_MODELS/mmproj-embeddinggemma-2-Q8_0.gguf"
+          echo 'Both pinned models required. Full reference compatibility and real-vector semantic controls enabled.'
           python3 scripts/test-release-guards.py
           python3 scripts/test-localization-checker.py 2>&1 | tee "$RUNNER_TEMP/digup-localization-checker-tests.log"
           python3 scripts/check-localization.py 2>&1 | tee "$RUNNER_TEMP/digup-localization-resources.log"
           swift build --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-test-helper-build.log"
           export DIGUP_TEST_HELPER="$(swift build --show-bin-path)/digup"
           test -x "$DIGUP_TEST_HELPER"
-          swift test --jobs 2 2>&1 | tee "$RUNNER_TEMP/digup-swift-test.log"
+          # Run the blocking AVFoundation regressions in their own process, then the complete suite.
+          python3 -u scripts/run-bounded-tests.py --seconds 300 --log "$RUNNER_TEMP/digup-media-focused-test.log" \
+            swift test --jobs 2 --filter MediaEmbeddingFailureTests
+          python3 -u scripts/run-bounded-tests.py --seconds 480 --log "$RUNNER_TEMP/digup-swift-test.log" \
+            swift test --jobs 2
+          test "$(grep -c 'MEDIA_RECOVERY_NEGATIVE ' "$RUNNER_TEMP/digup-swift-test.log")" -eq 6
+          grep -q 'MEDIA_RECOVERY_CLI_JSON real helper:' "$RUNNER_TEMP/digup-swift-test.log"
+          grep -q 'vectorsMatchTheReference() passed' "$RUNNER_TEMP/digup-swift-test.log"
 
       - name: Build isolated ad-hoc testing bundle
         id: app
@@ -130,19 +161,20 @@ jobs:
           cp docs/startup-path-audit.md build.noindex/STARTUP-PATH-AUDIT.md
           cp docs/ui-localization-acceptance.md build.noindex/UI-LOCALIZATION.md
           cp docs/install-test-zh.txt build.noindex/INSTALL-ZH.txt
+          cp docs/media-search-recovery.md build.noindex/MEDIA-RECOVERY.md
           {
             printf 'Source commit: %s\n' "$GITHUB_SHA"
             printf 'Workflow run: %s/actions/runs/%s\n' "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
             printf 'llama.cpp: b11461 (%s) plus scripts/llama.cpp-no-logits.patch\n' "$LLAMA_REVISION"
             printf 'Sparkle: 2.10.0 (%s)\n' "$SPARKLE_REVISION"
-            printf 'Signing: ad-hoc, no notarization. Public text model tested but not bundled; media model not downloaded.\n'
+            printf 'Signing: ad-hoc, no notarization. Exact pinned text and media models tested but not bundled.\n'
             printf 'Localization: English/Simplified Chinese unit/resource tests and relocated app resource/purpose smoke; GUI and actual system dialogs remain unverified.\n'
-            printf 'Tests: Chinese synthetic keyword regression, native text-token budget, actual app estimate-helper launch and extracted-bundle helper smoke. ReferenceVectorTests skipped (media absent). No GUI or full-indexing validation.\n'
+            printf 'Tests: full native suite with both pinned models, real 4-clip/8-query media-vector replay, six native no-match controls, mixed-modal search, media encoding-error/retry regressions, Chinese lexical/localized UI model checks and extracted-bundle smoke. No GUI or private-file validation.\n'
             cat "$RUNNER_TEMP/digup-toolchain.log"
           } > build.noindex/BUILD-INFO.txt
           archive="DigUpTest-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
           # tar preserves executable modes and symlinks; do not upload the .app directory directly.
-          tar -czf "dist/$archive" -C build.noindex DigUpTest.app LICENSE TESTING.md CHINESE-REGRESSIONS.md STARTUP-PATH-AUDIT.md UI-LOCALIZATION.md INSTALL-ZH.txt BUILD-INFO.txt
+          tar -czf "dist/$archive" -C build.noindex DigUpTest.app LICENSE TESTING.md CHINESE-REGRESSIONS.md STARTUP-PATH-AUDIT.md UI-LOCALIZATION.md INSTALL-ZH.txt MEDIA-RECOVERY.md BUILD-INFO.txt
           verify_dir="$(mktemp -d "$RUNNER_TEMP/digup-archive.XXXXXX")"
           tar -xzpf "dist/$archive" -C "$verify_dir"
           python3 - build.noindex/DigUpTest.app "$verify_dir/DigUpTest.app" <<'PY'
@@ -191,7 +223,7 @@ jobs:
         run: |
           {
             printf 'Tests: %s; app build: %s; archive verification: %s.\n\n' "$TEST_OUTCOME" "$BUILD_OUTCOME" "$ARCHIVE_OUTCOME"
-            printf 'Pinned public text weights are verified for native token-budget tests. ReferenceVectorTests skips because media weights are absent.\n\n'
+            printf 'Pinned public text and media weights are verified. Reference compatibility, media replay and six native no-match controls are required; skips do not meet acceptance.\n\n'
             printf 'This ad-hoc, non-notarized testing package is not an official release or an end-to-end validation.\n'
           } >> "$GITHUB_STEP_SUMMARY"
 

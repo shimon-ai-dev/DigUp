@@ -65,8 +65,20 @@ import Testing
 
     @Test func unrelatedTightlyClusteredMediaAreNotSuggested() throws {
         let store = try IndexStore(directory: folder)
-        for n in 1...4 { try add(store, n, cosine: 0.59 + Float(n) / 1000) }
+        for n in 1...4 { try add(store, n, cosine: 0.699 + Float(n) / 1000) }
         #expect(try Searcher(store: store).search("unrelated lunar geology", queryVector: query).isEmpty)
+    }
+
+    @Test func peerContrastGateSeparatesBelowAndAboveBoundary() throws {
+        for (label, peer, expected) in [("below", Float(0.7125), false), ("at", Float(0.71), true),
+                                        ("above", Float(0.7075), true)] {
+            let store = try IndexStore(directory: folder.appendingPathComponent(label))
+            try add(store, 1, cosine: 0.75)
+            for n in 2...4 { try add(store, n, cosine: peer) }
+            let hits = try Searcher(store: store).search("groceries for breakfast", queryVector: query)
+            #expect(!hits.isEmpty == expected)
+            if expected { #expect(hits.first?.path == "/synthetic/item1.dat") }
+        }
     }
 
     @Test func recoveryIsCappedAndExplicitGateStillControlsDiagnostics() throws {
@@ -79,6 +91,27 @@ import Testing
         #expect(try searcher.search("", queryVector: query).isEmpty)
         #expect(try searcher.search("groceries for breakfast", queryVector: query, zGate: 1_000_000).isEmpty)
         #expect(try searcher.search("groceries for breakfast", queryVector: query, limit: 1).count == 1)
+    }
+
+    @Test func videoRecoverySelectsPassingSoundWhenHigherZFrameMissesFloor() throws {
+        let store = try IndexStore(directory: folder)
+        let video = try add(store, 1, cosine: 0.64, kind: .video)
+        try store.addSegment(file: video, kind: .audio, modality: .audio, loc: 12, locEnd: 14,
+                             vector: Self.vector(0.84))
+        for n in 2...20 { try add(store, n, cosine: 0.70) }
+        for n in 21...39 {
+            let id = try store.insert(Candidate(path: "/synthetic/photo\(n).jpg", kind: .image,
+                                               size: 1, mtime: 1, inode: UInt64(n), device: 1))
+            try store.addSegment(file: id, kind: .image, modality: .image,
+                                 vector: Self.vector(n <= 30 ? 0.05 : 0.60))
+        }
+        let hits = try Searcher(store: store).search("spoken grocery reminder", queryVector: query)
+        let hit = try #require(hits.first { $0.path == "/synthetic/item1.dat" })
+        #expect(hit.isSuggestion)
+        #expect(hit.segment == .audio)
+        #expect(hit.loc == 12 && hit.locEnd == 14)
+        #expect((hit.cosine ?? 0) > 0.83)
+        #expect(Searcher.strongCount(hits) == 0)
     }
 
     @Test func invalidStoredVectorDoesNotPoisonValidMedia() throws {
