@@ -1,0 +1,161 @@
+name: Bounded multilingual media diagnostic
+
+on:
+  push:
+    branches: [ci/chinese-media-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    # Authorized public fork only, standard hosted Apple Silicon runner. No app packaging or publication.
+    if: ${{ github.repository == 'xieshiqi147258/DigUp' && github.event.repository.fork && !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.0.1.app/Contents/Developer
+      LLAMA_REVISION: 4d756bc72bf00a4aacf410ae15a2d315f3db400d
+      SPARKLE_REVISION: eef1a539a373c1f1a320624b1130fc5de7b2e100
+      DIGUP_MODELS: ${{ runner.temp }}/digup-media-models
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify toolchain and pure diagnostic checks
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee "$RUNNER_TEMP/digup-media-toolchain.log"
+          grep -qx 'Xcode 26.0.1' "$RUNNER_TEMP/digup-media-toolchain.log"
+          swift --version | tee -a "$RUNNER_TEMP/digup-media-toolchain.log"
+          command -v cmake > /dev/null
+          command -v say > /dev/null
+          command -v afconvert > /dev/null
+          python3 scripts/media-probe/test_probe.py
+          printf 'PROBE_OUTPUT=%s/Library/Caches/DigUpTest-media-probe-%s-%s\n' \
+            "$HOME" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+
+      - name: Build the unchanged CLI and local fixture renderer
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          mkdir -p Vendor
+          git -c credential.helper= clone --depth 1 --branch b11461 \
+            https://github.com/ggml-org/llama.cpp.git Vendor/llama.cpp
+          test "$(git -C Vendor/llama.cpp rev-parse HEAD)" = "$LLAMA_REVISION"
+          test "$(git -C Vendor/llama.cpp describe --tags --exact-match)" = b11461
+          scripts/build-llama.sh 2>&1 | tee "$RUNNER_TEMP/digup-media-llama-build.log"
+          swift package resolve
+          git diff --exit-code -- Package.resolved
+          test "$(git -C .build/checkouts/Sparkle rev-parse HEAD)" = "$SPARKLE_REVISION"
+          swift build --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-media-cli-build.log"
+          swiftc -parse-as-library scripts/media-probe/render_fixtures.swift -o "$RUNNER_TEMP/digup-media-renderer" \
+            2>&1 | tee "$RUNNER_TEMP/digup-media-renderer-build.log"
+          printf 'DIGUP_CLI=%s/digup\n' "$(swift build --show-bin-path)" >> "$GITHUB_ENV"
+
+      - name: Download and checksum the exact pinned public model files
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIGUP_MODELS"
+          python3 - "$DIGUP_MODELS" <<'PY'
+          import hashlib
+          import subprocess
+          import sys
+          from pathlib import Path
+          source = Path('Sources/DigUpKit/ModelFiles.swift').read_text()
+          revision = 'bfcd298762cc34d0357ece5ebdd31791a3a374d8'
+          assert f'public static let revision = "{revision}"' in source
+          files = [
+              ('embeddinggemma-2-Q8_0.gguf', 309855456, '2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135'),
+              ('mmproj-embeddinggemma-2-Q8_0.gguf', 554821024, 'c4a8a52691ecef40618438928bdf9e68379b854e24166f292592353db0aab64f'),
+          ]
+          for name, size, digest in files:
+              assert name in source and digest in source and f'{size:,}'.replace(',', '_') in source
+              destination = Path(sys.argv[1]) / name
+              partial = destination.with_suffix('.gguf.partial')
+              subprocess.run(['curl', '--fail', '--location', '--retry', '2', '--connect-timeout', '30',
+                              '--max-time', '480', '--output', str(partial),
+                              f'https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/{revision}/{name}'],
+                             check=True, timeout=500)
+              assert partial.stat().st_size == size, (name, partial.stat().st_size)
+              checksum = hashlib.sha256()
+              with partial.open('rb') as file:
+                  while chunk := file.read(8 << 20):
+                      checksum.update(chunk)
+              assert checksum.hexdigest() == digest, name
+              partial.replace(destination)
+              print(f'Verified {name}: {size} bytes, SHA-256 {digest}', flush=True)
+          PY
+
+      - name: Generate intelligible public fixtures with neutral filenames
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          python3 scripts/media-probe/make_fixtures.py --output "$PROBE_OUTPUT" \
+            --renderer "$RUNNER_TEMP/digup-media-renderer" 2>&1 | tee "$RUNNER_TEMP/digup-media-fixtures.log"
+          # Source transcripts and voice inventory are outside inputs, never indexed.
+          test -f "$PROBE_OUTPUT/inputs/a/f001.wav"
+          test -f "$PROBE_OUTPUT/inputs/a/f021.wav"
+
+      - name: Run real indexing, bilingual retrieval and localization diagnostics
+        id: diagnostic
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          unset DIGUP_WORKER_DIR
+          python3 scripts/media-probe/run_probe.py --cli "$DIGUP_CLI" --output "$PROBE_OUTPUT" \
+            2>&1 | tee "$RUNNER_TEMP/digup-media-diagnostic.log"
+          git diff --exit-code -- Sources Package.swift Package.resolved Resources
+
+      - name: Summarize observed results, including failures and untested coverage
+        if: ${{ always() }}
+        run: |
+          if [[ -f "$PROBE_OUTPUT/summary.txt" ]]; then
+            cat "$PROBE_OUTPUT/summary.txt" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -f "$PROBE_OUTPUT/manifest.json" ]]; then
+            printf 'Probe did not complete. Fixture generation coverage follows; see logs.\n\n' >> "$GITHUB_STEP_SUMMARY"
+            python3 - "$PROBE_OUTPUT/manifest.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          manifest = json.load(open(sys.argv[1]))
+          for key, value in manifest['coverage'].items():
+              print(f'- {key}: {value}')
+          for error in manifest['generation_errors']:
+              print(f'- Generation error: {error}')
+          PY
+          else
+            printf 'Probe blocked before fixture generation. See diagnostic build/download logs.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          printf '\nNo product behavior changes. No live microphone or private user files. No model artifacts uploaded.\n' \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload fixture media, machine-readable observations and logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digup-media-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.PROBE_OUTPUT }}/manifest.json
+            ${{ env.PROBE_OUTPUT }}/results.json
+            ${{ env.PROBE_OUTPUT }}/summary.txt
+            ${{ env.PROBE_OUTPUT }}/available-voices.txt
+            ${{ env.PROBE_OUTPUT }}/inputs/
+            ${{ env.PROBE_OUTPUT }}/indices/main/*.log
+            ${{ env.PROBE_OUTPUT }}/logs/
+            ${{ runner.temp }}/digup-media-*.log
+          if-no-files-found: ignore
+          retention-days: 7
