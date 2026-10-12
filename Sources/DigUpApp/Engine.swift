@@ -463,7 +463,7 @@ nonisolated final class Engine: @unchecked Sendable {
             return
         }
         let process = Process()
-        process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/" + AppIdentity.helperName)
+        process.executableURL = AppIdentity.bundledHelper(in: Bundle.main.bundleURL)
         var arguments = ["index-service", "--index", indexDirectory.path]
         if backfill { arguments.append("--backfill") }
         if pruneWanted { arguments.append("--prune") }
@@ -918,7 +918,7 @@ nonisolated final class Engine: @unchecked Sendable {
         let started = Date()
         do {
             // The bundled helper runs the model (`digup worker`); DIGUP_WORKER_DIR swaps in another worker.
-            var config = python ?? .helper(Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/" + AppIdentity.helperName))
+            var config = python ?? .helper(AppIdentity.bundledHelper(in: Bundle.main.bundleURL))
             config.environment["DIGUP_MODELS"] = modelsDirectory.path
             config.log = indexDirectory.appendingPathComponent("worker-query.log")
             config.qos = .userInitiated

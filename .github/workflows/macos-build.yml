@@ -82,6 +82,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$DIGUP_MODELS"
           echo 'Text-model budget tests enabled. No media model: ReferenceVectorTests skips; this is not an end-to-end test.'
+          python3 scripts/test-release-guards.py
           swift build --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-test-helper-build.log"
           export DIGUP_TEST_HELPER="$(swift build --show-bin-path)/digup"
           test -x "$DIGUP_TEST_HELPER"
@@ -130,7 +131,7 @@ jobs:
             printf 'llama.cpp: b11461 (%s) plus scripts/llama.cpp-no-logits.patch\n' "$LLAMA_REVISION"
             printf 'Sparkle: 2.10.0 (%s)\n' "$SPARKLE_REVISION"
             printf 'Signing: ad-hoc, no notarization. Public text model tested but not bundled; media model not downloaded.\n'
-            printf 'Tests: Chinese synthetic keyword regression and native text-token budget; ReferenceVectorTests skipped (media absent). No end-to-end validation.\n'
+            printf 'Tests: Chinese synthetic keyword regression, native text-token budget, actual app estimate-helper launch and extracted-bundle helper smoke. ReferenceVectorTests skipped (media absent). No GUI or full-indexing validation.\n'
             cat "$RUNNER_TEMP/digup-toolchain.log"
           } > build.noindex/BUILD-INFO.txt
           archive="DigUpTest-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
@@ -161,6 +162,8 @@ jobs:
           test -x "$verify_dir/DigUpTest.app/Contents/MacOS/DigUpTest"
           test -x "$verify_dir/DigUpTest.app/Contents/Helpers/digup-test"
           codesign --verify --deep --strict --verbose=2 "$verify_dir/DigUpTest.app"
+          python3 scripts/smoke-test-bundle.py --app "$verify_dir/DigUpTest.app" \
+            --models "$RUNNER_TEMP/digup-ci-models" 2>&1 | tee "$RUNNER_TEMP/digup-bundle-smoke.log"
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256" && shasum -a 256 --check "$archive.sha256")
 
       - name: Upload testing package and checksum

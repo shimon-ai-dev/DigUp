@@ -31,7 +31,7 @@ enum Estimates {
     static func run(_ folders: [URL], excluded: [URL] = [], types: [String] = [], code: Bool = false,
                     update: @escaping @MainActor @Sendable (FolderEstimate) -> Void) {
         let process = Process()
-        process.executableURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/digup")
+        process.executableURL = AppIdentity.bundledHelper(in: Bundle.main.bundleURL)
         var arguments = ["estimate", "--json"]
         if code { arguments.append("--code") }
         for folder in excluded { arguments += ["--exclude", folder.path] }
@@ -72,6 +72,12 @@ enum Estimates {
             try process.run()
         } catch {
             log("estimate: can't run the helper: \(error)")
+            output.fileHandleForReading.readabilityHandler = nil
+            process.terminationHandler = nil
+            for folder in paths {
+                update(FolderEstimate(folder: folder, seconds: 0, files: [:], pdfPages: 0, audioSeconds: 0,
+                                      videoSeconds: 0, readable: true, failed: true))
+            }
         }
     }
 

@@ -38,8 +38,15 @@ def main():
     parser.add_argument("--app", default=os.path.join(ROOT, "build.noindex/DigUp.app"))
     args = parser.parse_args()
 
+    with open(os.path.join(ROOT, "Resources/Info.plist"), "rb") as source:
+        source_info = plistlib.load(source)
+    if source_info.get("CFBundleIdentifier") == "io.github.xieshiqi147258.DigUp.ci":
+        sys.exit("DigUpTest release publishing is disabled; use the isolated CI testing package.")
+
     with open(os.path.join(args.app, "Contents/Info.plist"), "rb") as f:
         info = plistlib.load(f)
+    if info.get("CFBundleIdentifier") == "io.github.xieshiqi147258.DigUp.ci":
+        sys.exit("DigUpTest release publishing is disabled; use the isolated CI testing package.")
     version, build = info["CFBundleShortVersionString"], info["CFBundleVersion"]
     minimum = info.get("LSMinimumSystemVersion", "14.0")
     if not os.path.basename(args.dmg).endswith(f"-{version}.dmg"):

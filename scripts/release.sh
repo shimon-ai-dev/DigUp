@@ -8,6 +8,11 @@
 # Sparkle and listed first in that update feed (scripts/appcast.py). Publishing the DMG and the feed is a separate step.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+BUNDLE_ID="$(python3 -c 'import plistlib; print(plistlib.load(open("Resources/Info.plist", "rb"))["CFBundleIdentifier"])')"
+if [[ "$BUNDLE_ID" == "io.github.xieshiqi147258.DigUp.ci" ]]; then
+  echo "DigUpTest release publishing is disabled; use the isolated CI testing package." >&2
+  exit 1
+fi
 : "${SIGN_ID:?set SIGN_ID to a Developer ID Application identity (security find-identity -v -p codesigning)}"
 : "${NOTARY_PROFILE:?set NOTARY_PROFILE to a notarytool keychain profile (see the top of this script)}"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
