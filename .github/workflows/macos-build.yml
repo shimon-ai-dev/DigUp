@@ -2,7 +2,7 @@ name: macOS ad-hoc build
 
 on:
   push:
-    branches: [main, ci/macos-adhoc]
+    branches: [main, ci/macos-adhoc, fix/chinese-search-isolation]
   workflow_dispatch:
 
 permissions:
