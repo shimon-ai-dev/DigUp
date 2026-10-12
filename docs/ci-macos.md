@@ -10,14 +10,14 @@ This fork's `macOS ad-hoc build` workflow creates an Apple Silicon testing packa
 - Checkout v7.0.1 and upload-artifact v7.0.2, both pinned to full commit hashes. Recursive submodule checkout is enabled; the current source has no submodules.
 - CMake is taken from the runner image, checked before building, and its version is recorded. The runner image itself is maintained by GitHub rather than frozen by this workflow.
 
-The workflow builds llama.cpp, runs `swift test --jobs 2`, and invokes the existing `./build.sh` with `SIGN_ID=-` and `RELEASE=0`. It does not invoke `scripts/release.sh`, notarize, create a GitHub Release, update an appcast, or publish to Homebrew. The inherited Homebrew workflow is restricted to the upstream repository and skips in this fork.
+The workflow builds llama.cpp and the native CLI, runs release-guard checks and `swift test --jobs 2` (including the actual app estimate-helper launch), and invokes the existing `./build.sh` with `SIGN_ID=-` and `RELEASE=0`. It does not invoke `scripts/release.sh`, notarize, create a GitHub Release, update an appcast, or publish to Homebrew. The inherited Homebrew workflow is restricted to the upstream repository and skips in this fork.
 
 ## Contents and validation
 
 Download the `digup-ci-macos-arm64-<run-id>-<attempt>` Actions artifact and unzip GitHub's outer artifact container. It contains:
 
 - `DigUpTest-ci-macos-arm64-<source-commit>.tar.gz` and its `.sha256` checksum.
-- Inside the tar archive: `DigUpTest.app`, the original MIT `LICENSE`, this document as `TESTING.md`, and `CHINESE-REGRESSIONS.md`, and `BUILD-INFO.txt` with source/dependency revisions, tool versions, and the workflow run URL.
+- Inside the tar archive: `DigUpTest.app`, the original MIT `LICENSE`, this document as `TESTING.md`, `CHINESE-REGRESSIONS.md`, `STARTUP-PATH-AUDIT.md`, and `BUILD-INFO.txt` with source/dependency revisions, tool versions, and the workflow run URL.
 - The app contains its executable, the `digup-test` indexing/query helper with the static llama.cpp runtime, Sparkle and its updater helpers, icons, entitlements/signatures, and third-party `Acknowledgements.txt`.
 
 The app has ad-hoc hardened-runtime signatures and **no Developer ID signature or notarization**. macOS Gatekeeper can block it; a valid `codesign --verify` result does not establish notarization or distribution trust. The app's bundle ID is `io.github.xieshiqi147258.DigUp.ci`, its version is `0.0.0`, automatic update checks are disabled, and its feed is `https://example.invalid/digup-ci/appcast.xml`. Update controls cannot fetch official releases through that feed.
@@ -32,6 +32,8 @@ codesign --verify --deep --strict --verbose=2 package/DigUpTest.app
 ```
 
 `digup-ci-logs-<run-id>-<attempt>` is a separate artifact containing available toolchain, llama.cpp build, Swift test, and app build logs, including on failure.
+
+The extracted package also runs `scripts/smoke-test-bundle.py`: normal/code folder estimates and exclusions, pre-model index-service synchronization, Chinese filename retrieval, isolated scratch cleanup, and the real text-worker JSON protocol/inference. See `STARTUP-PATH-AUDIT.md` for the source/method/subprocess/GUI distinctions. The earlier `39930f1` package is superseded because its app-side folder estimator still used the removed helper name; helper status alone did not expose that defect.
 
 ## Test coverage limits
 

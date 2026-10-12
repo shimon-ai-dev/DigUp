@@ -4,9 +4,11 @@ import Testing
 @testable import DigUpApp
 
 /// Exercise the actual app launch path with the real CLI under its packaged name.
-/// CI supplies the freshly built helper; no installed app or user's folders are used.
+/// CI supplies the freshly built helper at the test runner's bundle location;
+/// no installed DigUp app or user's folders are used.
 @Suite(.serialized) struct EstimateHelperTests {
-    static let nativeHelper = ProcessInfo.processInfo.environment["DIGUP_TEST_HELPER"]
+    static let nativeHelper = ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true"
+        ? ProcessInfo.processInfo.environment["DIGUP_TEST_HELPER"] : nil
     static let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/" + AppIdentity.helperName)
 
     @MainActor @Test(.enabled(if: nativeHelper != nil))

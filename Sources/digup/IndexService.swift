@@ -143,11 +143,11 @@ final class IndexService: @unchecked Sendable {
         return yielded ? Set((try? part.store.pending(limit: nil, only: files).map(\.id)) ?? []) : []
     }
 
-    /// Scratch folders ($TMPDIR/DigUp-<pid>) of indexing processes that are gone (killed mid-batch).
+    /// Scratch folders ($TMPDIR/DigUpTest-<pid>) of indexing processes that are gone (killed mid-batch).
     private func removeStaleScratchFolders() {
         let temp = FileManager.default.temporaryDirectory
         for name in (try? FileManager.default.contentsOfDirectory(atPath: temp.path)) ?? [] {
-            guard name.hasPrefix("DigUp-"), let pid = Int32(name.dropFirst("DigUp-".count)),
+            guard name.hasPrefix(AppIdentity.scratchPrefix), let pid = Int32(name.dropFirst(AppIdentity.scratchPrefix.count)),
                   pid != getpid(), kill(pid, 0) != 0, errno == ESRCH else { continue }
             try? FileManager.default.removeItem(at: temp.appendingPathComponent(name))
         }

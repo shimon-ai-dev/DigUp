@@ -10,6 +10,8 @@ After the keyword/filename/migration commit `7ca48a7`, [run 38214966209](https:/
 
 The follow-on path regression [run 38221356586](https://github.com/xieshiqi147258/DigUp/actions/runs/38221356586) reproduced rejection of safe macOS temporary directories. [Run 38221873189](https://github.com/xieshiqi147258/DigUp/actions/runs/38221873189) then passed all path-isolation tests and failed only the two new Chinese code-budget regressions: strict overflow handling exposed a caller that still used character-sized code passages.
 
+The `39930f1` testing package is superseded: [run 38224282748](https://github.com/xieshiqi147258/DigUp/actions/runs/38224282748) reproduced two app-side folder-estimate failures using the real helper (wrong executable path and missing launch-failure completion). [Run 38225109794](https://github.com/xieshiqi147258/DigUp/actions/runs/38225109794) passed those regressions and all 98 Swift tests, then the new extracted-package smoke rejected the remaining stale testing-scratch cleanup mismatch. Subsequent packages require the broader checks in `STARTUP-PATH-AUDIT.md`; passing helper status alone is insufficient.
+
 ## Changes
 
 - Index and query use the same Han-character representation. Han-adjacent source punctuation/whitespace keeps a non-queryable boundary token, so a phrase cannot bridge separators. Queries use contiguous FTS phrases, so two-character terms such as 租房 and 合同 match inside longer runs without becoming unrelated-character OR searches. Original strings are preserved for excerpts and page landmarks. Existing English stemming and Bengali/Arabic normalization remain.

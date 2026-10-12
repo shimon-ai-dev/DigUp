@@ -125,6 +125,7 @@ jobs:
           cp LICENSE build.noindex/LICENSE
           cp docs/ci-macos.md build.noindex/TESTING.md
           cp docs/chinese-regressions.md build.noindex/CHINESE-REGRESSIONS.md
+          cp docs/startup-path-audit.md build.noindex/STARTUP-PATH-AUDIT.md
           {
             printf 'Source commit: %s\n' "$GITHUB_SHA"
             printf 'Workflow run: %s/actions/runs/%s\n' "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
@@ -136,7 +137,7 @@ jobs:
           } > build.noindex/BUILD-INFO.txt
           archive="DigUpTest-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
           # tar preserves executable modes and symlinks; do not upload the .app directory directly.
-          tar -czf "dist/$archive" -C build.noindex DigUpTest.app LICENSE TESTING.md CHINESE-REGRESSIONS.md BUILD-INFO.txt
+          tar -czf "dist/$archive" -C build.noindex DigUpTest.app LICENSE TESTING.md CHINESE-REGRESSIONS.md STARTUP-PATH-AUDIT.md BUILD-INFO.txt
           verify_dir="$(mktemp -d "$RUNNER_TEMP/digup-archive.XXXXXX")"
           tar -xzpf "dist/$archive" -C "$verify_dir"
           python3 - build.noindex/DigUpTest.app "$verify_dir/DigUpTest.app" <<'PY'

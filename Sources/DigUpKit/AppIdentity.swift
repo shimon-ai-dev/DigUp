@@ -4,6 +4,7 @@ import Foundation
 public enum AppIdentity {
     public static let bundleIdentifier = "io.github.xieshiqi147258.DigUp.ci"
     public static let helperName = "digup-test"
+    public static let scratchPrefix = "DigUpTest-"
     public static let helperIdentifier = bundleIdentifier + ".helper"
     public static func bundledHelper(in bundle: URL) -> URL {
         bundle.appendingPathComponent("Contents/Helpers").appendingPathComponent(helperName)

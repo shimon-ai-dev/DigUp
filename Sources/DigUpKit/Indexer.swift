@@ -52,10 +52,10 @@ public final class Indexer {
         self.store = store
         self.options = options
         self.makeEmbedder = makeEmbedder
-        // One folder per process ($TMPDIR/DigUp-<pid>, which the helper clears up after a process that died), and one
+        // One folder per process ($TMPDIR/DigUpTest-<pid>, which the helper clears up after a process that died), and one
         // in it per indexer: the helper runs two (the main index and the code index), and each clears its own away.
         scratch = FileManager.default.temporaryDirectory
-            .appendingPathComponent("DigUp-\(ProcessInfo.processInfo.processIdentifier)")
+            .appendingPathComponent(AppIdentity.scratchPrefix + String(ProcessInfo.processInfo.processIdentifier))
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }

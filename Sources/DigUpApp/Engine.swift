@@ -59,7 +59,7 @@ nonisolated struct EngineStatus: Sendable, Equatable {
 
 /// The engine host: search, the query encoder, and the indexing helper, all off the main thread.
 ///
-/// Indexing runs in a helper process (`Contents/Helpers/digup index-service`) that exits when it's done:
+/// Indexing runs in a helper process (`Contents/Helpers/digup-test index-service`) that exits when it's done:
 /// extraction is heavy (Vision OCR alone keeps ~100 MB of models in the process that ran it), and the app has to stay
 /// small while idle. The app watches the folders and tells the helper when to sync, pause, or run the backfill.
 ///

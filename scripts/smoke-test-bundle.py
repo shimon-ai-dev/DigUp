@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import plistlib
 import selectors
+import shutil
 import signal
 import struct
 import subprocess
@@ -113,7 +114,15 @@ def check_estimates(helper, fixtures, code, environment):
 
 
 def check_pre_model_search(helper, fixtures, index, environment):
-    # Only our private TMPDIR is examined; verify the synthetic PID is absent.
+    # Foundation may choose the Darwin user temp directory rather than TMPDIR.
+    # Discover the actual API result, then create only exclusive synthetic sentinels.
+    # Existing directories are never adopted, overwritten or removed by this test.
+    probe = subprocess.run(["xcrun", "swift", "-e",
+        "import Foundation; print(FileManager.default.temporaryDirectory.path)"],
+        env=environment, capture_output=True, text=True, timeout=90, check=True)
+    temporary = Path(probe.stdout.strip()).resolve()
+    require(temporary.is_dir(), "Foundation temporary-directory probe failed")
+    print(f"Scratch smoke Foundation directory: {temporary}", flush=True)
     dead_pid = 99999999
     try:
         os.kill(dead_pid, 0)
@@ -121,39 +130,42 @@ def check_pre_model_search(helper, fixtures, index, environment):
         pass
     else:
         raise AssertionError("scratch-cleanup fixture PID unexpectedly exists")
-    original = Path(environment["TMPDIR"]) / f"DigUp-{dead_pid}"
-    testing = Path(environment["TMPDIR"]) / f"DigUpTest-{dead_pid}"
-    original.mkdir()
-    testing.mkdir()
-    (original / "keep").write_text("synthetic original-app sentinel", encoding="utf-8")
-    (testing / "stale").write_text("synthetic test-app scratch", encoding="utf-8")
-    with child([helper, "index-service", str(fixtures), "--index", str(index), "--linger", "0"],
-               environment) as process:
-        lines = Lines(process, seconds=90)
-        events = []
-        while True:
-            event = lines.next()
-            events.append(event)
-            require(event.get("event") != "error", f"index service error: {event}")
-            if event.get("event") == "exit":
-                break
-        require(process.wait(timeout=10) == 0, "index service failed to exit cleanly")
-    require((original / "keep").read_text(encoding="utf-8") == "synthetic original-app sentinel",
-            "test helper touched original-prefixed scratch directory")
-    require(not testing.exists(), "test helper did not clean its own stale scratch directory")
-    names = [event.get("event") for event in events]
-    require("sync" in names and "waiting" in names, f"missing pre-model events: {events}")
-    require(names.index("sync") < names.index("waiting") < names.index("exit"),
-            "index service events out of order")
-    waiting = next(event for event in events if event.get("event") == "waiting")
-    require(waiting.get("for") == "model" and waiting.get("files") == 3
-            and waiting.get("pending") == 3 and waiting.get("vectors") == 0,
-            f"unexpected pre-model index state: {waiting}")
-    rows = json.loads(run(helper, ["search", "中文旅行计划", "--json", "--index", str(index)], environment))
-    target = (fixtures / "中文旅行计划.txt").resolve()
-    require(any(Path(row["path"]).resolve() == target for row in rows),
-            f"Chinese filename not returned before model download: {rows}")
-    print("PASS: bundled index service syncs before model download; Chinese filename search works", flush=True)
+    original = temporary / f"DigUp-{dead_pid}"
+    testing = temporary / f"DigUpTest-{dead_pid}"
+    with contextlib.ExitStack() as cleanup:
+        original.mkdir()
+        cleanup.callback(shutil.rmtree, original, ignore_errors=True)
+        testing.mkdir()
+        cleanup.callback(shutil.rmtree, testing, ignore_errors=True)
+        (original / "keep").write_text("synthetic original-app sentinel", encoding="utf-8")
+        (testing / "stale").write_text("synthetic test-app scratch", encoding="utf-8")
+        with child([helper, "index-service", str(fixtures), "--index", str(index), "--linger", "0"],
+                   environment) as process:
+            lines = Lines(process, seconds=90)
+            events = []
+            while True:
+                event = lines.next()
+                events.append(event)
+                require(event.get("event") != "error", f"index service error: {event}")
+                if event.get("event") == "exit":
+                    break
+            require(process.wait(timeout=10) == 0, "index service failed to exit cleanly")
+        require((original / "keep").read_text(encoding="utf-8") == "synthetic original-app sentinel",
+                "test helper touched original-prefixed scratch directory")
+        require(not testing.exists(), "test helper did not clean its own stale scratch directory")
+        names = [event.get("event") for event in events]
+        require("sync" in names and "waiting" in names, f"missing pre-model events: {events}")
+        require(names.index("sync") < names.index("waiting") < names.index("exit"),
+                "index service events out of order")
+        waiting = next(event for event in events if event.get("event") == "waiting")
+        require(waiting.get("for") == "model" and waiting.get("files") == 3
+                and waiting.get("pending") == 3 and waiting.get("vectors") == 0,
+                f"unexpected pre-model index state: {waiting}")
+        rows = json.loads(run(helper, ["search", "中文旅行计划", "--json", "--index", str(index)], environment))
+        target = (fixtures / "中文旅行计划.txt").resolve()
+        require(any(Path(row["path"]).resolve() == target for row in rows),
+                f"Chinese filename not returned before model download: {rows}")
+        print("PASS: bundled index service syncs before model download; Chinese filename search works", flush=True)
 
 
 def check_worker(helper, environment):
@@ -199,6 +211,8 @@ def main():
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--models", type=Path, required=True)
     args = parser.parse_args()
+    require(os.environ.get("GITHUB_ACTIONS") == "true",
+            "Packaged-helper smoke is restricted to the disposable GitHub CI runner")
     app, models = args.app.resolve(), args.models.resolve()
     with (app / "Contents/Info.plist").open("rb") as source:
         info = plistlib.load(source)
