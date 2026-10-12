@@ -13,6 +13,7 @@ import Testing
         let original = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/DigUp")
         let root = AppIdentity.supportDirectory
+        #expect(!AppIdentity.isOriginalDataDirectory(AppIdentity.indexDirectory))
         try FileManager.default.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: root, withDestinationURL: original)
         defer { try? FileManager.default.removeItem(at: root) } // only the link created above

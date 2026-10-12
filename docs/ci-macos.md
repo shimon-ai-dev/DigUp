@@ -35,7 +35,7 @@ codesign --verify --deep --strict --verbose=2 package/DigUpTest.app
 
 ## Test coverage limits
 
-CI downloads the pinned 310 MB public text model into a temporary folder and verifies its SHA-256. Native tokenizer-budget and limited text-inference tests actually run. The media model is not downloaded, and model weights are not bundled. `ReferenceVectorTests.vectorsMatchTheReference` is disabled by its existing `.enabled(if: modelsThere)` condition because the media model is absent. A green run therefore proves keyword regressions, text-budget tests, the remaining tests and build/package checks passed; it **does not** prove vector compatibility, actual model inference, UI behavior, semantic-search quality, or full end-to-end operation. The package includes no model weights, indexes, user files, signing identities or notarization credentials. The app can download its model when a person launches it; that download is outside this CI baseline.
+CI downloads the pinned 310 MB public text model into a temporary folder and verifies its SHA-256. Native tokenizer-budget and limited text-inference tests actually run. The media model is not downloaded, and model weights are not bundled. `ReferenceVectorTests.vectorsMatchTheReference` is disabled by its existing `.enabled(if: modelsThere)` condition because the media model is absent. A green run therefore proves keyword regressions, text-budget tests, the remaining tests and build/package checks passed; it **does not** prove multimodal vector compatibility, UI behavior, semantic-search quality, or full end-to-end operation. The package includes no model weights, indexes, user files, signing identities or notarization credentials. The app can download its model when a person launches it; that download is outside this CI baseline.
 
 ## Isolated manual testing
 
@@ -52,4 +52,4 @@ open -n "$PWD/package/DigUpTest.app" --args \
   -roots "$scratch/fixtures"
 ```
 
-Automatic and manual update entry points are disabled in this testing edition, including when launched without debug arguments. Existing public Hugging Face cache weights may be copied read-only into its private model directory after validation; the original app's writable model directory is not shared. Model-backed validation and any signed fork release require a separate, explicitly chosen scope. No release destination or fork update feed is configured here.
+Automatic and manual update entry points are disabled in this testing edition, including when launched without debug arguments. Existing public Hugging Face cache weights may be copied read-only into its private model directory after validation; the original app's writable model directory is not shared. Broader model-backed validation and any signed fork release require a separate, explicitly chosen scope. No release destination or fork update feed is configured here.

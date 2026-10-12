@@ -14,30 +14,39 @@ public enum AppIdentity {
     public static func isOriginalDataDirectory(_ directory: URL) -> Bool {
         let originalURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/DigUp")
-        let original = (resolved(originalURL) ?? originalURL).path
-        guard let canonical = resolved(directory) else { return true }
+        guard let original = resolved(originalURL)?.path,
+              let canonical = resolved(directory) else { return true }
         let requested = canonical.path.lowercased()
         let protected = original.lowercased()
         return requested == protected || requested.hasPrefix(protected + "/")
     }
 
-    // Foundation may leave a dangling symlink unresolved. Resolve its destination
-    // lexically too, without opening any files or creating the missing target.
-    private static func resolved(_ url: URL, depth: Int = 0) -> URL? {
-        guard depth < 32 else { return nil }
-        let canonical = url.standardizedFileURL
-        var ancestor = canonical, suffix: [String] = []
-        while ancestor.path != "/" {
-            if let link = try? FileManager.default.destinationOfSymbolicLink(atPath: ancestor.path) {
-                var destination = link.hasPrefix("/") ? URL(fileURLWithPath: link)
-                    : ancestor.deletingLastPathComponent().appendingPathComponent(link)
-                for component in suffix.reversed() { destination.appendPathComponent(component) }
-                return resolved(destination, depth: depth + 1)
+    // Resolve one filesystem component at a time, including dangling links.
+    // Foundation's standardization may map /private/var back to /var on macOS;
+    // recursively standardizing /var's destination then falsely looks like a loop.
+    // Keep physical components intact and handle ".." only after any symlink.
+    private static func resolved(_ url: URL) -> URL? {
+        var pending = url.path.split(separator: "/").map(String.init)
+        var components: [String] = []
+        var links = 0
+        while !pending.isEmpty {
+            let component = pending.removeFirst()
+            if component == "." { continue }
+            if component == ".." {
+                if !components.isEmpty { components.removeLast() }
+                continue
             }
-            suffix.append(ancestor.lastPathComponent)
-            ancestor.deleteLastPathComponent()
+            let candidate = "/" + (components + [component]).joined(separator: "/")
+            if let link = try? FileManager.default.destinationOfSymbolicLink(atPath: candidate) {
+                links += 1
+                guard links <= 32 else { return nil }
+                if link.hasPrefix("/") { components.removeAll() }
+                pending = link.split(separator: "/").map(String.init) + pending
+            } else {
+                components.append(component)
+            }
         }
-        return canonical.resolvingSymlinksInPath().standardizedFileURL
+        return URL(fileURLWithPath: "/" + components.joined(separator: "/"))
     }
 
     public static func validateDataDirectory(_ directory: URL) throws {
