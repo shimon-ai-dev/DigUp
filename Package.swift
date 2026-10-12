@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "DigUp",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "digup", targets: ["digup"]),
@@ -31,6 +32,7 @@ let package = Package(
         .executableTarget(
             name: "DigUpApp",
             dependencies: ["DigUpKit", .product(name: "Sparkle", package: "Sparkle")],
+            resources: [.process("Resources")],
             swiftSettings: [.defaultIsolation(MainActor.self)],
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
