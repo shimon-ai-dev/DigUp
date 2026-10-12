@@ -216,7 +216,7 @@ final class AppController {
     /// Nil when `combo` is now the hotkey, else why it can't be.
     func setHotkey(_ combo: KeyCombo) -> String? {
         if let conflict = combo.systemConflict { return conflict }
-        guard hotkeys.register(combo) else { return "Another app is using \(combo.display)" }
+        guard hotkeys.register(combo) else { return Localization.current.format("error.shortcut.other", fallback: "Another app is using %@", combo.display) }
         AppSettings.save(hotkey: combo.spec)
         model.settings.hotkey = combo.spec
         model.hotkey = combo
@@ -245,7 +245,7 @@ final class AppController {
             return nil
         } catch {
             log("login item: \(error)")
-            return error.localizedDescription
+            Localization.current.format("error.login", fallback: "Cannot change login startup: %@", error.localizedDescription)
         }
     }
 

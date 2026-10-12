@@ -397,13 +397,11 @@ private struct IndexProgress: View {
     /// "357 of 365 files searchable · 8 waiting · 2 long files to finish"
     private var detail: String {
         let status = model.status
-        var text = "\(status.searchable.formatted()) of \(status.files.formatted()) files searchable"
-        if status.pending > 0 { text += " · \(status.pending.formatted()) waiting" }
-        if status.unfinished > 0 {
-            text += " · \(status.unfinished.formatted()) long \(status.unfinished == 1 ? "file" : "files") to finish"
-        }
-        if model.download.isActive { text += " · model \(model.download.progressText)" }
-        return text
+        var parts = [Localization.current.format("settings.index.searchable", fallback: "%lld of %lld files searchable", Int64(status.searchable), Int64(status.files))]
+        if status.pending > 0 { parts.append(Localization.current.format("settings.index.waiting", fallback: "%lld waiting", Int64(status.pending))) }
+        if status.unfinished > 0 { parts.append(Localization.current.count("count.longRemaining", status.unfinished, one: "%lld long file to finish", other: "%lld long files to finish")) }
+        if model.download.isActive { parts.append(Localization.current.format("settings.index.model", fallback: "model %@", model.download.progressText)) }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -445,7 +443,7 @@ private struct FolderStatusRow: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(summary.missing || summary.unreadable ? Localization.current.text("folder.kept", fallback: "Kept for when it's back")
-                     : "\(summary.indexed.formatted()) of \(summary.files.formatted()) indexed")
+                     : Localization.current.format("settings.folder.indexed", fallback: "%lld of %lld indexed", Int64(summary.indexed), Int64(summary.files)))
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                 if !states.isEmpty {
                     Text(states).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -456,17 +454,17 @@ private struct FolderStatusRow: View {
             }
             .buttonStyle(.plain)
             .help(Localization.current.text("folder.stopSearching", fallback: "Stop searching this folder"))
-            .accessibilityLabel("Remove \((summary.path as NSString).lastPathComponent)")
+            .accessibilityLabel(Localization.current.format("settings.folder.remove.accessibility", fallback: "Remove %@", (summary.path as NSString).lastPathComponent))
         }
         .padding(.vertical, 2)
     }
 
     private var states: String {
-        [summary.pending > 0 ? "\(summary.pending.formatted()) waiting" : nil,
+        [summary.pending > 0 ? Localization.current.format("settings.index.waiting", fallback: "%lld waiting", Int64(summary.pending)) : nil,
          summary.unfinished > 0
-            ? "\(summary.unfinished.formatted()) long \(summary.unfinished == 1 ? "file" : "files") to finish" : nil,
-         summary.skipped > 0 ? "\(summary.skipped.formatted()) skipped" : nil,
-         summary.failed > 0 ? "\(summary.failed.formatted()) couldn't be read" : nil].compactMap { $0 }
+            ? Localization.current.count("count.longRemaining", summary.unfinished, one: "%lld long file to finish", other: "%lld long files to finish") : nil,
+         summary.skipped > 0 ? Localization.current.format("settings.index.skipped", fallback: "%lld skipped", Int64(summary.skipped)) : nil,
+         summary.failed > 0 ? Localization.current.format("settings.index.failed", fallback: "%lld couldn't be read", Int64(summary.failed)) : nil].compactMap { $0 }
             .joined(separator: " · ")
     }
 }

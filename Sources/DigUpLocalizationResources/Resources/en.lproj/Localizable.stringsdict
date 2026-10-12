@@ -18,6 +18,38 @@
 			<string>%lld cells</string>
 		</dict>
 	</dict>
+	<key>count.codeIndexed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld code file indexed</string>
+			<key>other</key>
+			<string>%lld code files indexed</string>
+		</dict>
+	</dict>
+	<key>count.codeWaiting</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld code file waiting</string>
+			<key>other</key>
+			<string>%lld code files waiting</string>
+		</dict>
+	</dict>
 	<key>count.files</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -48,6 +80,22 @@
 			<string>%lld folder</string>
 			<key>other</key>
 			<string>%lld folders</string>
+		</dict>
+	</dict>
+	<key>count.indexed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld file indexed</string>
+			<key>other</key>
+			<string>%lld files indexed</string>
 		</dict>
 	</dict>
 	<key>count.kind.audio</key>
@@ -178,6 +226,54 @@
 			<string>%lld lines</string>
 		</dict>
 	</dict>
+	<key>count.longFiles</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld long file</string>
+			<key>other</key>
+			<string>%lld long files</string>
+		</dict>
+	</dict>
+	<key>count.longRemaining</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld long file to finish</string>
+			<key>other</key>
+			<string>%lld long files to finish</string>
+		</dict>
+	</dict>
+	<key>count.notIndexed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld file isn't indexed yet</string>
+			<key>other</key>
+			<string>%lld files aren't indexed yet</string>
+		</dict>
+	</dict>
 	<key>count.pages</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -208,6 +304,38 @@
 			<string>%lld result</string>
 			<key>other</key>
 			<string>%lld results</string>
+		</dict>
+	</dict>
+	<key>count.waiting</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld file waiting</string>
+			<key>other</key>
+			<string>%lld files waiting</string>
+		</dict>
+	</dict>
+	<key>count.waiting.index</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld file waiting to be indexed</string>
+			<key>other</key>
+			<string>%lld files waiting to be indexed</string>
 		</dict>
 	</dict>
 	<key>count.weaker</key>

@@ -16,6 +16,34 @@
 			<string>%lld 个单元</string>
 		</dict>
 	</dict>
+	<key>count.codeIndexed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>已索引 %lld 个代码文件</string>
+		</dict>
+	</dict>
+	<key>count.codeWaiting</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>%lld 个代码文件等待处理</string>
+		</dict>
+	</dict>
 	<key>count.files</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -42,6 +70,20 @@
 			<string>lld</string>
 			<key>other</key>
 			<string>%lld 个文件夹</string>
+		</dict>
+	</dict>
+	<key>count.indexed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>已索引 %lld 个文件</string>
 		</dict>
 	</dict>
 	<key>count.kind.audio</key>
@@ -156,6 +198,48 @@
 			<string>%lld 行</string>
 		</dict>
 	</dict>
+	<key>count.longFiles</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>%lld 个长文件</string>
+		</dict>
+	</dict>
+	<key>count.longRemaining</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>%lld 个长文件待完成</string>
+		</dict>
+	</dict>
+	<key>count.notIndexed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>仍有 %lld 个文件尚未索引</string>
+		</dict>
+	</dict>
 	<key>count.pages</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -182,6 +266,34 @@
 			<string>lld</string>
 			<key>other</key>
 			<string>%lld 个结果</string>
+		</dict>
+	</dict>
+	<key>count.waiting</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>%lld 个文件等待处理</string>
+		</dict>
+	</dict>
+	<key>count.waiting.index</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>other</key>
+			<string>%lld 个文件等待建立索引</string>
 		</dict>
 	</dict>
 	<key>count.weaker</key>

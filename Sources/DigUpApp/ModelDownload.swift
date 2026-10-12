@@ -46,7 +46,7 @@ final class ModelDownload {
     init(folder: URL) {
         self.folder = folder
         guard (try? Self.validateDestination(folder)) != nil else {
-            phase = .failed("The original DigUp data directory cannot be used by DigUp Test")
+            phase = .failed(Localization.current.text("error.originalData", fallback: "The original DigUp data directory cannot be used by DigUp Test"))
             return
         }
         phase = ModelFiles.missing(in: folder).isEmpty ? .ready : .needed
@@ -74,18 +74,18 @@ final class ModelDownload {
         return Double(total - received) / bytesPerSecond
     }
 
-    /// "42% · about 1 min left", "Checking the download…", "Waiting for the network…"
+    /// "42% · about 1 min left", Localization.current.text("download.verifying", fallback: "Checking the download…"), Localization.current.text("download.waiting", fallback: "Waiting for the network…")
     var progressText: String {
         switch phase {
-        case .needed: return "Not downloaded yet"
+        case .needed: return Localization.current.text("download.needed", fallback: "Not downloaded yet")
         case .downloading:
-            let percent = "\(Int((fraction * 100).rounded(.down)))%"
+            let percent = Localization.current.percent(fraction)
             guard let left = secondsLeft else { return percent }
-            return percent + " · " + (left < 50 ? "less than a minute left" : "about \(roughDuration(left)) left")
-        case .verifying: return "Checking the download…"
-        case .retrying: return "Waiting for the network…"
+            return left < 50 ? Localization.current.format("download.remainingShort", fallback: "%@ · less than a minute left", percent) : Localization.current.format("download.remaining", fallback: "%@ · about %@ left", percent, roughDuration(left))
+        case .verifying: return Localization.current.text("download.verifying", fallback: "Checking the download…")
+        case .retrying: return Localization.current.text("download.waiting", fallback: "Waiting for the network…")
         case .failed(let message): return message
-        case .ready: return "Ready"
+        case .ready: return Localization.current.text("download.ready", fallback: "Ready")
         }
     }
 
@@ -104,7 +104,7 @@ final class ModelDownload {
     private func next() {
         do { try Self.validateDestination(folder) }
         catch {
-            phase = .failed("\(error)")
+            phase = .failed(Localization.current.downloadFailure(String(describing: error)))
             return
         }
         guard let file = ModelFiles.missing(in: folder).first else {
@@ -121,13 +121,13 @@ final class ModelDownload {
             var folder = self.folder
             try folder.setResourceValues(values)
         } catch {
-            phase = .failed("Can't create \(tildePath(folder.path))")
+            phase = .failed(Localization.current.format("error.download.folder", fallback: "Can't create %@", tildePath(folder.path)))
             log("model: can't create \(folder.path): \(error)")
             return
         }
         let needed = ModelFiles.missing(in: folder).reduce(0) { $0 + $1.bytes } - partialBytes(of: file) + 200_000_000
         if let free = freeSpace(), free < needed {
-            phase = .failed("Needs \(bytes(needed)) free on this disk")
+            phase = .failed(Localization.current.format("error.download.space", fallback: "Needs %@ free on this disk", bytes(needed)))
             log("model: needs \(bytes(needed)) free, \(bytes(free)) is free")
             return
         }
@@ -171,7 +171,7 @@ final class ModelDownload {
         }, waiting: { [weak self] in
             DispatchQueue.main.async { [weak self] in
                 guard let self, attempt == current else { return }
-                phase = .retrying("Waiting for a network connection")
+                phase = .retrying(Localization.current.text("download.connection", fallback: "Waiting for a network connection"))
                 log("model: waiting for a network connection")
             }
         }, done: { [weak self] outcome in
@@ -204,7 +204,7 @@ final class ModelDownload {
         fetcher = nil
         do { try Self.validateDestination(folder) }
         catch {
-            phase = .failed("\(error)")
+            phase = .failed(Localization.current.downloadFailure(String(describing: error)))
             return
         }
         switch outcome {
@@ -233,7 +233,7 @@ final class ModelDownload {
                         failedChecks += 1
                         received = bytesOnDisk()
                         if failedChecks >= 2 {
-                            phase = .failed("The download was damaged twice. Try again later.")
+                            phase = .failed(Localization.current.text("error.download.damaged", fallback: "The download was damaged twice. Try again later."))
                         } else {
                             next()
                         }
@@ -378,13 +378,13 @@ nonisolated final class FileFetcher: NSObject, URLSessionDataDelegate, @unchecke
             guard range.hasPrefix("bytes \(written)-") else {
                 // Not where we asked: start the file over next time.
                 try? FileManager.default.removeItem(at: partial)
-                problem = ("The download couldn't resume", true)
+                problem = (Localization.current.text("error.download.resume", fallback: "The download couldn't resume"), true)
                 return completionHandler(.cancel)
             }
         case 200:
             written = 0   // the whole file, from the start
         default:
-            problem = ("Hugging Face answered \(status)", status == 429 || status >= 500)
+            problem = (Localization.current.format("error.download.http", fallback: "Hugging Face answered %lld", Int64(status)), status == 429 || status >= 500)
             return completionHandler(.cancel)
         }
         do {
@@ -397,7 +397,7 @@ nonisolated final class FileFetcher: NSObject, URLSessionDataDelegate, @unchecke
             self.handle = handle
             completionHandler(.allow)
         } catch {
-            problem = ("Can't save the model: \(error.localizedDescription)", false)
+            problem = (Localization.current.format("error.download.save", fallback: "Can't save the model: %@", error.localizedDescription), false)
             completionHandler(.cancel)
         }
     }
@@ -407,7 +407,7 @@ nonisolated final class FileFetcher: NSObject, URLSessionDataDelegate, @unchecke
             try handle?.write(contentsOf: data)
             written += Int64(data.count)
         } catch {
-            problem = ("Can't save the model: \(error.localizedDescription)", false)
+            problem = (Localization.current.format("error.download.save", fallback: "Can't save the model: %@", error.localizedDescription), false)
             dataTask.cancel()
             return
         }
@@ -427,11 +427,11 @@ nonisolated final class FileFetcher: NSObject, URLSessionDataDelegate, @unchecke
             done(.failed(problem.message, retry: problem.retry))
         } else if let error {
             if (error as NSError).code == NSURLErrorCancelled { return }   // cancel()
-            done(.failed(error.localizedDescription, retry: true))
+            done(.failed(Localization.current.downloadFailure(error.localizedDescription), retry: true))
         } else if written == file.bytes {
             done(.downloaded(partial))
         } else {
-            done(.failed("The download stopped early", retry: true))
+            done(.failed(Localization.current.text("error.download.early", fallback: "The download stopped early"), retry: true))
         }
     }
 }

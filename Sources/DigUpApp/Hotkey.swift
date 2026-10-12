@@ -105,13 +105,13 @@ nonisolated struct KeyCombo: Equatable, Sendable {
         }
         guard taken else { return nil }
         switch (Int(keyCode), Int(carbonModifiers)) {
-        case (kVK_Space, cmdKey): return "Spotlight uses \(display)"
-        case (kVK_Space, cmdKey | optionKey): return "Finder's search window uses \(display)"
-        case (kVK_Space, controlKey), (kVK_Space, controlKey | optionKey): return "Switching input sources uses \(display)"
-        case (kVK_Space, controlKey | cmdKey): return "The emoji picker uses \(display)"
+        case (kVK_Space, cmdKey): return Localization.current.format("error.shortcut.spotlight", fallback: "Spotlight uses %@", display)
+        case (kVK_Space, cmdKey | optionKey): return Localization.current.format("error.shortcut.finder", fallback: "Finder's search window uses %@", display)
+        case (kVK_Space, controlKey), (kVK_Space, controlKey | optionKey): return Localization.current.format("error.shortcut.input", fallback: "Switching input sources uses %@", display)
+        case (kVK_Space, controlKey | cmdKey): return Localization.current.format("error.shortcut.emoji", fallback: "The emoji picker uses %@", display)
         case (kVK_ANSI_3, cmdKey | shiftKey), (kVK_ANSI_4, cmdKey | shiftKey), (kVK_ANSI_5, cmdKey | shiftKey):
-            return "Screenshots use \(display)"
-        default: return "macOS uses \(display) for one of its shortcuts"
+            return Localization.current.format("error.shortcut.screenshot", fallback: "Screenshots use %@", display)
+        default: return Localization.current.format("error.shortcut.system", fallback: "macOS uses %@ for one of its shortcuts", display)
         }
     }
 }

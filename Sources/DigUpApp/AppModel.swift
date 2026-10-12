@@ -22,48 +22,44 @@ final class AppModel {
 
     /// One line for the menu and the windows: what the index is doing.
     var statusLine: String {
+        let l = Localization.current
         let status = self.status
-        guard hasFolders else { return "No folders chosen yet" }
+        guard hasFolders else { return l.text("search.noFolders", fallback: "No folders chosen yet") }
         switch status.activity {
-        case .starting: return "Starting…"
+        case .starting: return l.text("status.starting", fallback: "Starting…")
         case .failed(let problem): return "⚠︎ \(problem)"
-        case .syncing: return "Checking folders…"
-        case .indexing(let done, let total):
-            let percent = total > 0 ? Int((Double(done) / Double(total) * 100).rounded(.down)) : 0
-            return "Indexing \(percent)% · \(done.formatted()) of \(total.formatted())"
+        case .syncing: return l.text("status.checking", fallback: "Checking folders…")
+        case .indexing(let done, let total): return l.indexingProgress(done: done, total: total)
         case .finishing(let done, let total, let files):
-            let percent = total > 0 ? Int((Double(done) / Double(total) * 100).rounded(.down)) : 0
-            let which = files > 0 ? "\(files.formatted()) long \(files == 1 ? "file" : "files")" : "long files"
-            return "Reading the rest of \(which) · \(percent)%"
+            let which = files > 0 ? l.count("count.longFiles", files, one: "%lld long file", other: "%lld long files") : l.text("status.longFiles", fallback: "long files")
+            return l.format("status.finishing", fallback: "Reading the rest of %@ · %@", which, l.percent(total > 0 ? Double(done) / Double(total) : 0))
         case .idle:
             if let line = downloadLine { return line }
-            if let code = status.code.indexing, code.total > 0 {
-                let percent = Int((Double(code.done) / Double(code.total) * 100).rounded(.down))
-                return "Indexing code \(percent)% · \(code.done.formatted()) of \(code.total.formatted())"
+            if let code = status.code.indexing, code.total > 0 { return l.indexingCodeProgress(done: code.done, total: code.total) }
+            if status.pending > 0 {
+                if status.paused { return l.format("status.pausedDetail", fallback: "Paused · %@", l.waitingFiles(status.pending, reason: nil)) }
+                return l.waitingFiles(status.pending, reason: status.waitingFor)
             }
-            let waiting = "\(status.pending.formatted()) \(status.pending == 1 ? "file" : "files") waiting"
-            if status.pending > 0, status.paused { return "Paused · \(waiting)" }
-            if status.pending > 0, let reason = status.waitingFor { return "\(waiting) · \(reason)" }
-            if status.pending > 0 { return "\(waiting) to be indexed" }
             if status.unfinished > 0 {
-                let rest = "\(status.unfinished.formatted()) long \(status.unfinished == 1 ? "file" : "files") to finish"
-                if status.paused { return "Paused · \(rest)" }
-                if let reason = status.waitingFor { return "\(rest) · \(reason)" }
+                let rest = l.count("count.longRemaining", status.unfinished, one: "%lld long file to finish", other: "%lld long files to finish")
+                if status.paused { return l.format("status.pausedDetail", fallback: "Paused · %@", rest) }
+                if let reason = status.waitingFor { return l.format("status.waiting.reason", fallback: "%@ · %@", rest, reason) }
             }
-            return "\(status.searchable.formatted()) \(status.searchable == 1 ? "file" : "files") indexed"
-                + (status.paused ? " · paused" : "")
+            let indexed = l.count("count.indexed", status.searchable, one: "%lld file indexed", other: "%lld files indexed")
+            return status.paused ? l.format("status.indexedPaused", fallback: "%@ · paused", indexed) : indexed
         }
     }
 
     /// While the model isn't there, how its download goes.
     private var downloadLine: String? {
+        let l = Localization.current
         switch download.phase {
-        case .ready: nil
-        case .downloading: "Downloading the model · \(Int(download.fraction * 100))%"
-        case .verifying: "Checking the model download…"
-        case .retrying: "Model download: waiting for the network"
-        case .failed: "⚠︎ The model download stopped"
-        case .needed: status.pending > 0 ? "The model isn't downloaded yet" : nil
+        case .ready: return nil
+        case .downloading: return l.format("status.downloading", fallback: "Downloading the model · %@", l.percent(download.fraction))
+        case .verifying: return l.text("status.download.verifying", fallback: "Checking the model download…")
+        case .retrying: return l.text("status.download.retry", fallback: "Model download: waiting for the network")
+        case .failed: return l.text("status.download.stopped", fallback: "⚠︎ The model download stopped")
+        case .needed: return status.pending > 0 ? l.text("status.download.needed", fallback: "The model isn't downloaded yet") : nil
         }
     }
 
@@ -82,47 +78,45 @@ final class AppModel {
 
     /// One line about the code index, for Settings → Code: "812 code files indexed", "Indexing code 42%…".
     var codeStatusLine: String {
+        let l = Localization.current
         let code = status.code
-        guard hasCode else { return "Code search is off" }
-        if !download.isReady { return "Code is read once the model has downloaded" }
-        if let indexing = code.indexing, indexing.total > 0 {
-            let percent = Int((Double(indexing.done) / Double(indexing.total) * 100).rounded(.down))
-            return "Indexing code \(percent)% · \(indexing.done.formatted()) of \(indexing.total.formatted())"
-        }
-        let waiting = code.pending > 0 ? " · \(code.pending.formatted()) waiting" : ""
-        if code.pending > 0, status.paused { return "Paused · \(code.pending.formatted()) code files waiting" }
-        if code.pending > 0, let reason = status.waitingFor { return "\(code.pending.formatted()) code files waiting · \(reason)" }
-        return "\(code.searchable.formatted()) code \(code.searchable == 1 ? "file" : "files") indexed" + waiting
+        guard hasCode else { return l.text("search.code.off", fallback: "Code search is off") }
+        if !download.isReady { return l.text("status.code.waitModel", fallback: "Code is read once the model has downloaded") }
+        if let indexing = code.indexing, indexing.total > 0 { return l.indexingCodeProgress(done: indexing.done, total: indexing.total) }
+        let waiting = l.count("count.codeWaiting", code.pending, one: "%lld code file waiting", other: "%lld code files waiting")
+        if code.pending > 0, status.paused { return l.format("status.pausedDetail", fallback: "Paused · %@", waiting) }
+        if code.pending > 0, let reason = status.waitingFor { return l.format("status.waiting.reason", fallback: "%@ · %@", waiting, reason) }
+        let indexed = l.count("count.codeIndexed", code.searchable, one: "%lld code file indexed", other: "%lld code files indexed")
+        return code.pending > 0 ? l.format("status.code.indexedWaiting", fallback: "%@ · %@", indexed, waiting) : indexed
     }
 
     /// A few words for the search bar while results may be incomplete: "Indexing 42%", "Downloading model · 42%".
     var activityBadge: String? {
-        if download.isActive { return "Downloading model · \(Int(download.fraction * 100))%" }
+        let l = Localization.current
+        if download.isActive { return l.format("status.badge.downloading", fallback: "Downloading model · %@", l.percent(download.fraction)) }
         if case .indexing(let done, let total) = status.activity, total > 0 {
-            return "Indexing \(Int(Double(done) / Double(total) * 100))%"
+            return l.format("status.badge.indexing", fallback: "Indexing %@", l.percent(Double(done) / Double(total)))
         }
-        if status.paused, status.pending > 0 { return "Indexing paused" }
+        if status.paused, status.pending > 0 { return l.text("status.badge.paused", fallback: "Indexing paused") }
         return nil
     }
 
     /// Why meaning search can't run yet (words still match), or nil.
     var meaningUnavailable: String? {
+        let l = Localization.current
         guard !download.isReady else { return nil }
-        if download.isActive {
-            return "Matching words only until the model has downloaded (\(Int(download.fraction * 100))%)"
-        }
-        return "Matching words only: the model isn't downloaded"
+        if download.isActive { return l.format("status.meaning.downloading", fallback: "Matching words only until the model has downloaded (%@)", l.percent(download.fraction)) }
+        return l.text("status.meaning.missing", fallback: "Matching words only: the model isn't downloaded")
     }
 
     /// Why results may be incomplete right now, or nil.
     var resultsCaveat: String? {
+        let l = Localization.current
         if let meaningUnavailable { return meaningUnavailable }
         if case .indexing(let done, let total) = status.activity, total > 0 {
-            return "Still indexing (\(Int(Double(done) / Double(total) * 100))%): some files aren't in yet"
+            return l.format("status.results.incomplete", fallback: "Still indexing (%@): some files aren't in yet", l.percent(Double(done) / Double(total)))
         }
-        if status.pending > 0 {
-            return "\(status.pending.formatted()) \(status.pending == 1 ? "file isn't" : "files aren't") indexed yet"
-        }
+        if status.pending > 0 { return l.count("count.notIndexed", status.pending, one: "%lld file isn't indexed yet", other: "%lld files aren't indexed yet") }
         return nil
     }
 }

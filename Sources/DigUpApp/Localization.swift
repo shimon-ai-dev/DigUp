@@ -60,6 +60,34 @@ nonisolated struct Localization: Sendable {
         return weaker > 0 ? format("search.results.withWeaker", fallback: "%@ · %@", scope, weakerCount(weaker)) : scope
     }
 
+    /// Display percentage preserves the original floor behavior; locale controls spacing and number syntax.
+    func percent(_ fraction: Double) -> String {
+        (floor(max(0, fraction) * 100) / 100).formatted(.percent.precision(.fractionLength(0)).locale(formattingLocale))
+    }
+    func indexingProgress(done: Int, total: Int) -> String {
+        format("status.indexing", fallback: "Indexing %@ · %lld of %lld", percent(total > 0 ? Double(done) / Double(total) : 0), Int64(done), Int64(total))
+    }
+    func indexingCodeProgress(done: Int, total: Int) -> String {
+        format("status.indexing.code", fallback: "Indexing code %@ · %lld of %lld", percent(total > 0 ? Double(done) / Double(total) : 0), Int64(done), Int64(total))
+    }
+    func waitingFiles(_ value: Int, reason: String?) -> String {
+        if let reason {
+            let waiting = count("count.waiting", value, one: "%lld file waiting", other: "%lld files waiting")
+            return format("status.waiting.reason", fallback: "%@ · %@", waiting, reason)
+        }
+        return count("count.waiting.index", value, one: "%lld file waiting to be indexed", other: "%lld files waiting to be indexed")
+    }
+    func durationEstimate(_ seconds: Double) -> String {
+        switch seconds {
+        case ..<90: return format("duration.seconds", fallback: "%lld s", Int64(seconds.rounded()))
+        case ..<5400: return format("duration.minutes", fallback: "%lld min", Int64((seconds / 60).rounded()))
+        default: return format("duration.hours", fallback: "%.1f h", seconds / 3600)
+        }
+    }
+    func downloadFailure(_ original: String) -> String {
+        format("error.download.context", fallback: "Download failed: %@", original)
+    }
+
     static let resourceBundleName = AppLocalizationResources.bundleName
     static func resourceBundle(appBundle: Bundle) throws -> Bundle {
         if appBundle.bundleURL.pathExtension == "app" {
