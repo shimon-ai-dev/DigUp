@@ -46,7 +46,7 @@ def validate(root):
                     if form in entry and placeholders(entry[form])!=[(1,'lld')]:raise ValueError(f'{k}.{lang}.{form}: count placeholder required')
     return len(tables['en']),len(plurals['en'])
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--resources',type=Path,default=Path(__file__).resolve().parents[1]/'Sources/DigUpApp/Resources');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--resources',type=Path,default=Path(__file__).resolve().parents[1]/'Sources/DigUpLocalizationResources/Resources');a=p.parse_args()
     try:
         n,m=validate(a.resources);print(f'Localization OK: {n} text keys, {m} plural keys per language')
     except (ValueError,OSError,KeyError) as e:p.exit(1,f'Localization FAILED: {e}\n')

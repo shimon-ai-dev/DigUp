@@ -1,4 +1,5 @@
 import Foundation
+import DigUpLocalizationResources
 
 /// Immutable app-only localization. File contents and helper protocol values never pass through this table.
 nonisolated struct Localization: Sendable {
@@ -47,7 +48,7 @@ nonisolated struct Localization: Sendable {
         self.count("count.results", count, one: "%lld result", other: "%lld results")
     }
 
-    static let resourceBundleName = "DigUp_DigUpApp.bundle"
+    static let resourceBundleName = AppLocalizationResources.bundleName
     static func resourceBundle(appBundle: Bundle) throws -> Bundle {
         if appBundle.bundleURL.pathExtension == "app" {
             guard let url = appBundle.resourceURL?.appendingPathComponent(resourceBundleName),
@@ -56,7 +57,7 @@ nonisolated struct Localization: Sendable {
             else { throw CocoaError(.fileNoSuchFile) }
             return found
         }
-        return Bundle.module
+        return AppLocalizationResources.bundle
     }
 
     private static func propertyList(bundle: Bundle, language: String, ext: String) -> [String: Any] {
