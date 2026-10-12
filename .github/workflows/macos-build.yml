@@ -82,6 +82,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$DIGUP_MODELS"
           echo 'Text-model budget tests enabled. No media model: ReferenceVectorTests skips; this is not an end-to-end test.'
+          swift build --jobs 2 --product digup 2>&1 | tee "$RUNNER_TEMP/digup-test-helper-build.log"
+          export DIGUP_TEST_HELPER="$(swift build --show-bin-path)/digup"
+          test -x "$DIGUP_TEST_HELPER"
           swift test --jobs 2 2>&1 | tee "$RUNNER_TEMP/digup-swift-test.log"
 
       - name: Build isolated ad-hoc testing bundle
