@@ -362,3 +362,6 @@
 "settings.index.retryFailed" = "重试失败的媒体";
 "settings.index.retryDetail" = "重试所有已连接的所选文件夹中失败的媒体，保留已成功处理的音频片段和视频帧。";
 "settings.index.legacyMedia" = "旧版媒体索引不完整。请重试失败的媒体以补齐缺失部分；已成功处理的片段会保留。";
+
+"error.settings" = "DigUp Test 无法加载这些设置";
+"error.defaultsSuite" = "无法使用设置域“%@”。请省略 -defaultsSuite，或选择独立的测试设置域。";

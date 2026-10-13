@@ -362,3 +362,6 @@
 "settings.index.retryFailed" = "Retry failed media";
 "settings.index.retryDetail" = "Retries failed media in all connected selected folders; keeps successful windows and frames.";
 "settings.index.legacyMedia" = "Earlier-version media index is incomplete. Retry failed media to fill missing parts; successful parts are kept.";
+
+"error.settings" = "DigUp Test cannot load these settings";
+"error.defaultsSuite" = "Cannot use settings domain \"%@\". Omit -defaultsSuite or choose a separate testing domain.";

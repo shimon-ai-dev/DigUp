@@ -81,4 +81,15 @@ The app uses a tiny `DigUpLocalizationResources` resource-only target. This keep
 
 The archive job runs `scripts/smoke-test-localization.py` against the extracted app. It copies the app outside the checkout, temporarily hides `.build` with guaranteed restoration on ordinary failure/termination, and tests English, Simplified Chinese and unsupported-language fallback. It checks all five bundled permission purpose strings and confirms deleting the nested resource bundle fails closed. This read-only CLI probe exits before the GUI, settings, helper or downloads start.
 
+A separate `scripts/smoke-test-app-startup.py` gate launches the extracted, signature-verified app
+through its real `NSApplication.run` and `applicationDidFinishLaunching` path. It checks the
+same-bundle default domain, an explicit same-bundle domain, and a separate custom development
+suite, including pre-existing test preferences. It requires the engine searcher to become ready,
+delayed main-loop menu callbacks and a clean timed shutdown. The explicit same-bundle case also
+constructs and renders the welcome window to PNG. All source/index/model paths are disposable;
+no folders are selected, no model download is started, and original DigUp data/settings metadata
+must remain unchanged. Empty onboarding/code locations prevent home-folder estimates. This is
+a bounded offscreen AppKit startup regression, not an on-screen usability, Gatekeeper, privacy
+permission, hotkey, login-item or full end-to-end test.
+
 See `UI-LOCALIZATION.md` for the manual acceptance checklist. CI does not prove layout, VoiceOver or actual macOS permission dialog presentation. The inherited source-folder alias limitation remains unchanged.

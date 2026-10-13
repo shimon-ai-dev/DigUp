@@ -30,8 +30,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do { settings = try AppSettings.load() }
         catch {
             let alert = NSAlert()
-            alert.messageText = Localization.current.text("error.dataFolders", fallback: "DigUp Test cannot use these data folders")
-            alert.informativeText = Localization.current.originalDataRejection()
+            if error is AppSettingsDefaultsError {
+                alert.messageText = Localization.current.text("error.settings", fallback: "DigUp Test cannot load these settings")
+                alert.informativeText = error.localizedDescription
+            } else {
+                alert.messageText = Localization.current.text("error.dataFolders", fallback: "DigUp Test cannot use these data folders")
+                alert.informativeText = Localization.current.originalDataRejection()
+            }
             alert.runModal()
             NSApp.terminate(nil)
             return

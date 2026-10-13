@@ -7,7 +7,7 @@ import Foundation
 /// saved, which is how tests point the app at the testbed and never at real folders:
 ///
 ///     DigUp.app/Contents/MacOS/DigUp -roots ~/DigUpTestbed/real -indexDir <repo>/.dev/app-index \
-///         -modelsDir <repo>/.dev/models -defaultsSuite com.abdurrahim.DigUp.dev
+///         -modelsDir <repo>/.dev/models -defaultsSuite io.github.xieshiqi147258.DigUp.ci.dev
 ///
 /// `-roots` takes one folder, several joined with ":", or a plist array. `-defaultsSuite` keeps what the app saves
 /// (onboarding's folders, a new hotkey) out of the real settings. With no roots the app indexes nothing and opens
@@ -48,17 +48,38 @@ nonisolated struct AppSettings: Sendable {
     static let batteryDetail = Localization.current.text("settings.battery.detail", fallback: "When it's off, a folder's first pass waits for a charger. New files always go in right away.")
 
     /// Where settings are saved. Reads see launch arguments first either way. (UserDefaults is thread-safe.)
-    nonisolated(unsafe) static let defaults: UserDefaults = {
-        let requested = UserDefaults.standard.string(forKey: "defaultsSuite")
-        let suite = requested.flatMap { value in
-            let normalized = value.lowercased()
-            return value.isEmpty || normalized == "com.abdurrahim.digup" || normalized.hasPrefix("com.abdurrahim.digup.") ? nil : value
-        } ?? AppIdentity.bundleIdentifier
-        return UserDefaults(suiteName: suite)!
-    }()
+    /// Cache a failure too: an invalid explicit suite must never switch to another app's preferences.
+    nonisolated(unsafe) private static let savedDefaults: Result<UserDefaults, any Error> = Result {
+        try resolveDefaults(requestedSuite: UserDefaults.standard.string(forKey: "defaultsSuite"),
+                            bundleIdentifier: Bundle.main.bundleIdentifier, standard: .standard)
+    }
+
+    static var defaults: UserDefaults {
+        get throws { try savedDefaults.get() }
+    }
+
+    static func resolveDefaults(requestedSuite: String?, bundleIdentifier: String?,
+                                standard: UserDefaults) throws -> UserDefaults {
+        let suite = requestedSuite ?? AppIdentity.bundleIdentifier
+        let normalized = suite.lowercased()
+        let reserved = [UserDefaults.globalDomain, UserDefaults.argumentDomain, UserDefaults.registrationDomain]
+        guard !suite.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !suite.contains("\0"),
+              normalized != "com.abdurrahim.digup", !normalized.hasPrefix("com.abdurrahim.digup."),
+              !reserved.contains(where: { $0.lowercased() == normalized }) else {
+            throw AppSettingsDefaultsError(suite: suite)
+        }
+        // Foundation rejects the current app's own bundle ID as a suite. Standard already uses that domain.
+        // Unbundled SwiftPM runs still use the explicit testing domain, not their host process's standard defaults.
+        if suite == bundleIdentifier { return standard }
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            throw AppSettingsDefaultsError(suite: suite)
+        }
+        return defaults
+    }
 
     static func load() throws -> AppSettings {
-        let defaults = Self.defaults
+        let defaults = try Self.defaults
         let requestedIndex = defaults.string(forKey: "indexDir").map(folderURL) ?? defaultIndexDirectory
         let requestedModels = defaults.string(forKey: "modelsDir").map(folderURL) ?? ModelFiles.installed
         try AppIdentity.validateDataDirectory(requestedIndex)
@@ -98,36 +119,36 @@ nonisolated struct AppSettings: Sendable {
     }
 
     static func save(roots: [URL]) {
-        defaults.set(roots.map(\.path), forKey: "roots")
+        try? defaults.set(roots.map(\.path), forKey: "roots")
     }
 
     static func save(excludedFolders: [URL]) {
-        defaults.set(excludedFolders.map(\.path), forKey: "excludedFolders")
+        try? defaults.set(excludedFolders.map(\.path), forKey: "excludedFolders")
     }
 
     static func save(excludedTypes: [String]) {
-        defaults.set(excludedTypes, forKey: "excludedTypes")
+        try? defaults.set(excludedTypes, forKey: "excludedTypes")
     }
 
     static func save(hotkey: String) {
-        defaults.set(hotkey, forKey: "hotkey")
+        try? defaults.set(hotkey, forKey: "hotkey")
     }
 
     static func save(indexOnBattery: Bool) {
-        defaults.set(indexOnBattery, forKey: "indexOnBattery")
+        try? defaults.set(indexOnBattery, forKey: "indexOnBattery")
     }
 
     static func saveOnboarded() {
-        defaults.set(true, forKey: "onboarded")
+        try? defaults.set(true, forKey: "onboarded")
     }
 
     static func save(codeRoots: [URL], excluded: [URL]) {
-        defaults.set(codeRoots.map(\.path), forKey: "codeRoots")
-        defaults.set(excluded.map(\.path), forKey: "codeExcludedFolders")
+        try? defaults.set(codeRoots.map(\.path), forKey: "codeRoots")
+        try? defaults.set(excluded.map(\.path), forKey: "codeExcludedFolders")
     }
 
     static func save(codeEditor: String) {
-        defaults.set(codeEditor, forKey: "codeEditor")
+        try? defaults.set(codeEditor, forKey: "codeEditor")
     }
 
     /// Expands "~" and resolves symlinks, so crawled paths match the paths FSEvents reports.
@@ -145,4 +166,13 @@ nonisolated struct AppSettings: Sendable {
 /// "~/DigUpTestbed/real" instead of "/Users/…/DigUpTestbed/real".
 nonisolated func tildePath(_ path: String) -> String {
     (path as NSString).abbreviatingWithTildeInPath
+}
+
+/// A configuration error, surfaced by load() before controllers or app data I/O start.
+nonisolated struct AppSettingsDefaultsError: LocalizedError {
+    let suite: String
+    var errorDescription: String? {
+        Localization.current.format("error.defaultsSuite", fallback:
+            "Cannot use settings domain \"%@\". Omit -defaultsSuite or choose a separate testing domain.", suite)
+    }
 }
