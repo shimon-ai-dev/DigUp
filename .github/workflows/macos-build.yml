@@ -207,6 +207,7 @@ jobs:
           python3 scripts/smoke-test-bundle.py --app "$verify_dir/DigUpTest.app" \
             --models "$RUNNER_TEMP/digup-ci-models" 2>&1 | tee "$RUNNER_TEMP/digup-bundle-smoke.log"
           python3 scripts/smoke-test-localization.py "$verify_dir/DigUpTest.app" 2>&1 | tee "$RUNNER_TEMP/digup-localization-smoke.log"
+          python3 -u scripts/smoke-test-app-startup.py "$verify_dir/DigUpTest.app" 2>&1 | tee "$RUNNER_TEMP/digup-app-startup-smoke.log"
           (cd dist && shasum -a 256 "$archive" > "$archive.sha256" && shasum -a 256 --check "$archive.sha256")
 
       - name: Upload testing package and checksum
