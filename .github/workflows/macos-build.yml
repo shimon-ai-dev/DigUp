@@ -15,7 +15,7 @@ concurrency:
 jobs:
   build:
     # Standard hosted runner is free for a public fork. Fail closed elsewhere.
-    if: ${{ github.repository == 'xieshiqi147258/DigUp' && github.event.repository.fork && !github.event.repository.private }}
+    if: ${{ github.repository == 'xieshiqi147258/DigUp' && github.event.repository.fork && !github.event.repository.private && !contains(github.event.head_commit.message, '[startup-red]') }}
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
@@ -172,8 +172,8 @@ jobs:
             printf 'llama.cpp: b11461 (%s) plus scripts/llama.cpp-no-logits.patch\n' "$LLAMA_REVISION"
             printf 'Sparkle: 2.10.0 (%s)\n' "$SPARKLE_REVISION"
             printf 'Signing: ad-hoc, no notarization. Exact pinned text and media models tested but not bundled.\n'
-            printf 'Localization: English/Simplified Chinese unit/resource tests and relocated app resource/purpose smoke; GUI and actual system dialogs remain unverified.\n'
-            printf 'Tests: full native suite with both pinned models, real 4-clip/8-query audio replay, 12-query photo/screenshot/video/long-audio/Chinese-speech replay, six native no-match controls, mixed-modal search, media encoding-error/retry and legacy done-media reconciliation regressions, Chinese lexical/localized UI model checks and extracted-bundle smoke. No GUI or private-file validation.\n'
+            printf 'Localization: English/Simplified Chinese unit/resource tests and relocated app resource/purpose smoke; offscreen AppKit startup/render smoke; on-screen layout and actual system dialogs remain unverified.\n'
+            printf 'Tests: full native suite with both pinned models, real 4-clip/8-query audio replay, 12-query photo/screenshot/video/long-audio/Chinese-speech replay, six native no-match controls, mixed-modal search, media encoding-error/retry and legacy done-media reconciliation regressions, Chinese lexical/localized UI model checks and extracted-bundle smoke plus real extracted AppKit startup, persisted defaults and onboarding render. No private-file or full interactive GUI validation.\n'
             cat "$RUNNER_TEMP/digup-toolchain.log"
           } > build.noindex/BUILD-INFO.txt
           archive="DigUpTest-ci-macos-arm64-${GITHUB_SHA}.tar.gz"
@@ -237,6 +237,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digup-ci-logs-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/digup-*.log
+          path: |
+            ${{ runner.temp }}/digup-*.log
+            ${{ runner.temp }}/digup-startup-*.png
           if-no-files-found: ignore
           retention-days: 7

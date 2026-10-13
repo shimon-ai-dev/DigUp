@@ -1,0 +1,57 @@
+name: Focused packaged startup RED
+
+on:
+  push:
+    branches: [fix/chinese-search-isolation]
+    paths: [.github/workflows/startup-red.yml]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  startup:
+    if: ${{ github.repository == 'xieshiqi147258/DigUp' && github.event.repository.fork && !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify existing build 35 package and reach real AppKit startup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          cd "$RUNNER_TEMP"
+          curl --fail --silent --show-error --location --retry 2 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/xieshiqi147258/DigUp/actions/artifacts/11760621477/zip \
+            -o previous-build.zip
+          printf '%s  previous-build.zip\n' 49c2d9c158b7c88e751aba1286552376ae419977740b430b4cafc1f2027a38a7 | shasum -a 256 --check -
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('previous-build.zip') as archive:
+              assert archive.testzip() is None
+              expected = 'DigUpTest-ci-macos-arm64-ec147e332da154e1ccf50079fec220a8a1ad09a2.tar.gz'
+              assert set(archive.namelist()) == {expected, expected + '.sha256'}
+              archive.extractall('previous-build')
+          PY
+          cd previous-build
+          archive=DigUpTest-ci-macos-arm64-ec147e332da154e1ccf50079fec220a8a1ad09a2.tar.gz
+          printf '%s  %s\n' b8a7822a72b50b900762d003a997a588a726851cf66b57b03041c47b809b2c39 "$archive" | shasum -a 256 --check -
+          shasum -a 256 --check "$archive.sha256"
+          mkdir extracted
+          tar -xzpf "$archive" -C extracted
+          codesign --verify --deep --strict --verbose=2 extracted/DigUpTest.app
+          python3 -u "$GITHUB_WORKSPACE/scripts/smoke-test-app-startup.py" "$PWD/extracted/DigUpTest.app" \
+            2>&1 | tee "$RUNNER_TEMP/digup-app-startup-red.log"
+      - name: Preserve startup RED evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: digup-startup-red-${{ github.run_id }}
+          path: ${{ runner.temp }}/digup-app-startup-red.log
+          if-no-files-found: ignore
+          retention-days: 7

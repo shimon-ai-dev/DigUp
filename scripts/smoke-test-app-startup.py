@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Launch the extracted AppKit app on a disposable CI Mac, past its real settings boundary."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import plistlib
 import signal
+import shutil
 import subprocess
 import tempfile
 import time
@@ -35,7 +37,8 @@ def launch(executable, directory, name, suite=None, snapshot=False):
     index = case / "index"
     image = case / "onboarding.png"
     command = [str(executable), "-indexDir", str(index), "-modelsDir", str(case / "models"),
-               "-roots", "", "-codeRoots", "", "-onboarded", "NO", "-debugOffscreen", "YES",
+               "-roots", "", "-codeRoots", "", "-onboardingLocations", "", "-codeLocations", "",
+               "-onboarded", "NO", "-debugOffscreen", "YES",
                "-AppleLanguages", "(en)"]
     if suite is not None:
         command += ["-defaultsSuite", suite]
@@ -62,6 +65,8 @@ def launch(executable, directory, name, suite=None, snapshot=False):
     assert process.returncode == 0, (name, process.returncode, stdout, stderr)
     log = (index / "app.log").read_text()
     assert f"launch pid {process.pid}:" in log and "power:" in log, (name, log)
+    assert "engine: searcher ready" in log, (name, log)
+    assert "model: downloading" not in log and not (case / "models").exists(), (name, log)
     assert str(index) in log and str(case / "models") in log, (name, log)
     if snapshot:
         assert "window: onboarding:welcome loaded" in log, log
@@ -84,9 +89,12 @@ def check(app):
     verified = run("codesign", "--verify", "--deep", "--strict", str(app))
     assert verified.returncode == 0, verified.stderr
     # No persistent domain may be adopted or overwritten, even on this ephemeral runner.
-    assert run("defaults", "export", TEST_ID, "-").returncode != 0, "Startup fixture requires a fresh test defaults domain"
+    existing = run("defaults", "export", TEST_ID, "-")
+    assert existing.returncode != 0 or not plistlib.loads(existing.stdout.encode()), \
+        "Startup fixture refuses a nonempty test defaults domain"
     custom = TEST_ID + ".startup." + str(os.getpid())
-    assert run("defaults", "export", custom, "-").returncode != 0
+    existing = run("defaults", "export", custom, "-")
+    assert existing.returncode != 0 or not plistlib.loads(existing.stdout.encode())
     before = original_snapshot()
     try:
         for suite, sentinel in [(TEST_ID, "persisted-test-hotkey"), (custom, "persisted-custom-hotkey")]:
@@ -98,6 +106,9 @@ def check(app):
             assert 'hotkey: can\'t read "persisted-test-hotkey"' in normal, normal
             explicit = launch(executable, root, "same-bundle-explicit", suite=TEST_ID, snapshot=True)
             assert 'hotkey: can\'t read "persisted-test-hotkey"' in explicit, explicit
+            evidence = Path(os.environ["RUNNER_TEMP"]) / "digup-startup-onboarding.png"
+            shutil.copyfile(root / "same-bundle-explicit/onboarding.png", evidence)
+            print(f"STARTUP PNG: {evidence.name}, SHA-256 {hashlib.sha256(evidence.read_bytes()).hexdigest()}", flush=True)
             separate = launch(executable, root, "custom-suite", suite=custom)
             assert 'hotkey: can\'t read "persisted-custom-hotkey"' in separate, separate
             assert "persisted-test-hotkey" not in separate, separate
@@ -109,7 +120,7 @@ def check(app):
         for suite in [custom, TEST_ID]:
             run("defaults", "delete", suite)
     print("PASS: extracted signed AppKit app loaded persisted isolated settings, constructed onboarding/menu, "
-          "processed Pause/Resume, remained alive, rendered PNG and exited cleanly; original data unchanged", flush=True)
+          "processed delayed menu callbacks, remained alive, rendered PNG and exited cleanly; original data unchanged", flush=True)
 
 
 if __name__ == "__main__":
