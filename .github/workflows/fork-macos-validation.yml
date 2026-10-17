@@ -1,0 +1,102 @@
+# Add only on ci/validate-search-* or ci/validate-zh-hans-* in the owned fork.
+# This commit must be an immediate child of the exact clean PR commit under test.
+name: Fork macOS validation
+on:
+  push:
+    branches:
+      - 'ci/validate-search-*'
+      - 'ci/validate-zh-hans-*'
+permissions:
+  contents: read
+concurrency:
+  group: fork-macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    if: github.repository == 'shimon-ai-dev/DigUp'
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, upstream pin
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Verify CI-only commit and record toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p validation-logs
+          test "$(git diff-tree --no-commit-id --name-only -r HEAD)" = '.github/workflows/fork-macos-validation.yml'
+          {
+            echo "CI commit: $(git rev-parse HEAD)"
+            echo "Clean PR commit: $(git rev-parse HEAD^)"
+            sw_vers
+            uname -m
+            xcodebuild -version
+            swift --version
+          } | tee validation-logs/environment.log
+          test -d "$DEVELOPER_DIR"
+      - name: Build pinned native llama runtime
+        run: |
+          set -euo pipefail
+          scripts/build-llama.sh 2>&1 | tee validation-logs/llama-build.log
+      - name: Run native Swift tests
+        run: |
+          set -euo pipefail
+          swift test 2>&1 | tee validation-logs/swift-test.log
+      - name: Check localization sources and checker regressions
+        if: startsWith(github.ref_name, 'ci/validate-zh-hans-')
+        run: |
+          set -euo pipefail
+          python3 scripts/check-localizations.py 2>&1 | tee validation-logs/localization-sources.log
+          python3 scripts/test-localizations.py 2>&1 | tee validation-logs/localization-checker.log
+      - name: Build production-identity app with ad-hoc signature
+        run: |
+          set -euo pipefail
+          SIGN_ID=- ./build.sh 2>&1 | tee validation-logs/app-build.log
+      - name: Check packaged localization and permission resources
+        if: startsWith(github.ref_name, 'ci/validate-zh-hans-')
+        run: |
+          set -euo pipefail
+          python3 scripts/check-localizations.py --app build.noindex/DigUp.app 2>&1 | tee validation-logs/localization-package.log
+      - name: Verify bundle identity, declared permissions and ad-hoc signature
+        run: |
+          set -euo pipefail
+          APP=build.noindex/DigUp.app
+          plutil -lint "$APP/Contents/Info.plist"
+          cmp Resources/Info.plist "$APP/Contents/Info.plist"
+          test -x "$APP/Contents/MacOS/DigUp"
+          test -x "$APP/Contents/Helpers/digup"
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tee validation-logs/signature-verify.log
+          codesign -d --entitlements :- "$APP" > validation-logs/entitlements.plist 2> validation-logs/signature-details.log
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          source = plistlib.loads(Path('Resources/DigUp.entitlements').read_bytes())
+          signed = plistlib.loads(Path('validation-logs/entitlements.plist').read_bytes())
+          expected = dict(source, **{'com.apple.security.cs.disable-library-validation': True})
+          assert signed == expected, (signed, expected)
+          print('Production entitlements preserved with upstream ad-hoc library-validation exception')
+          PY
+          "$APP/Contents/Helpers/digup" --help 2>&1 | tee validation-logs/packaged-cli-help.log
+      - name: Record scope and omissions
+        if: always()
+        run: |
+          {
+            echo 'This run checks native Swift compilation/tests and production-identity ad-hoc bundle packaging.'
+            echo 'Localization branch additionally checks packaged en/zh-Hans/zh-Hant resources and permission descriptions.'
+            echo 'ReferenceVectorTests and NativeTextBudgetTests require external model files and may be skipped; inspect swift-test.log.'
+            echo 'No developer certificate, notarization, Gatekeeper distribution assessment, live TCC permission prompt, visual UI check, model-quality evaluation, or updater execution is covered.'
+            echo 'The app is not launched; only the packaged CLI help is executed.'
+          } | tee validation-logs/scope.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1, upstream pin
+        if: always()
+        with:
+          name: macos-validation-${{ github.sha }}
+          path: validation-logs/
+          if-no-files-found: error
+          retention-days: 14
